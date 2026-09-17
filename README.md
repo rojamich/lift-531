@@ -34,6 +34,9 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   including a reset to 90% when you missed reps.
 - **Works offline.** Installable to the home screen; logging a set never waits on
   a network.
+- **Tells you which build you're on.** Settings shows version, build date and
+  commit. A new deploy is offered as a banner rather than applied on its own, so
+  a reload never lands in the middle of a set.
 
 ## Running it
 
@@ -95,6 +98,14 @@ your Google account.
 ```bash
 npm run build && npx firebase-tools deploy --only hosting
 ```
+
+Bump `version` in `package.json` when you deploy something you want to be able
+to point at. The build stamp shown in Settings is that version plus the build
+date and the commit it was built from (`+` means the tree had uncommitted
+changes), so you can always tell a phone's build from what's on GitHub.
+
+Installed copies pick up a deploy within half an hour, or immediately via
+Settings → Version → Check. The new build is never applied without being asked.
 
 The first deploy asks you to pick the project. You'll get a
 `https://<project>.web.app` URL — open it on each phone and use *Add to Home

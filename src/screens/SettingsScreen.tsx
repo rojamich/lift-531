@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { EquipmentQuickToggle } from '../components/ExerciseSwap'
 import { useToast, useWeight } from '../components/hooks'
 import { Button, Card, Field, Input, NumberField, Pill, SectionTitle, Sheet, Toggle, Toast } from '../components/ui'
+import { useUpdateState } from '../components/UpdateBanner'
 import { firebaseEnabled } from '../data/firebase'
+import { applyUpdate, checkForUpdates } from '../data/updates'
+import { buildStamp } from '../lib/version'
 import { DEFAULT_INCREMENTS, fromKg, lbToKg, toKg, type Unit } from '../lib/units'
 import type { UnitPair } from '../lib/types'
 import { useApp } from '../state/useApp'
@@ -45,6 +48,7 @@ export function SettingsScreen() {
   const weight = useWeight()
   const toast = useToast()
   const [advanced, setAdvanced] = useState(false)
+  const update = useUpdateState()
 
   if (!profile) return null
   const settings = profile.settings
@@ -225,7 +229,7 @@ export function SettingsScreen() {
       </Card>
 
       <SectionTitle>Account</SectionTitle>
-      <Card className="space-y-2 p-3">
+      <Card className="mb-5 space-y-2 p-3">
         {!firebaseEnabled ? (
           <p className="rounded-lg border border-flame-500/40 bg-flame-500/10 px-3 py-2 text-xs text-ink-300">
             <span className="font-semibold text-flame-400">Local mode.</span> Everything is saved in this browser
@@ -239,6 +243,48 @@ export function SettingsScreen() {
         <Button variant="ghost" className="w-full" onClick={signOut}>
           {user?.local ? 'Switch profile' : 'Sign out'}
         </Button>
+      </Card>
+
+      <SectionTitle>Version</SectionTitle>
+      <Card className="p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="tabular text-sm font-semibold">{buildStamp()}</div>
+            <div className="text-xs text-ink-400">
+              {update.needRefresh
+                ? 'A newer version is downloaded and waiting.'
+                : update.supported
+                  ? 'This is the build currently installed on this device.'
+                  : 'Running from the dev server — no installed copy to update.'}
+            </div>
+          </div>
+          {update.needRefresh ? (
+            <Button variant="primary" size="sm" className="shrink-0" onClick={() => void applyUpdate()}>
+              Update
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="shrink-0"
+              disabled={update.checking || !update.supported}
+              onClick={async () => {
+                const result = await checkForUpdates()
+                toast.show(
+                  result === 'update-found'
+                    ? 'New version found — tap Update'
+                    : result === 'up-to-date'
+                      ? "You're on the latest version"
+                      : 'Cannot check from here',
+                )
+              }}
+            >
+              {update.checking ? 'Checking…' : 'Check'}
+            </Button>
+          )}
+        </div>
+        <p className="mt-2 text-[11px] text-ink-400">
+          Compare the commit against the latest on GitHub if you're unsure.
+        </p>
       </Card>
 
       <Sheet open={advanced} onClose={() => setAdvanced(false)} title="Danger zone">

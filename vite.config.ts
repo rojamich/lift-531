@@ -1,14 +1,44 @@
+import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version: string
+}
+
+/** Short commit, with a marker when the tree had uncommitted changes. */
+function gitDescription(): string {
+  try {
+    const sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+    const dirty = execSync('git status --porcelain', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim().length
+    return dirty ? `${sha}+` : sha
+  } catch {
+    // Building outside a checkout, e.g. from a tarball.
+    return 'nogit'
+  }
+}
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __GIT_SHA__: JSON.stringify(gitDescription()),
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate': auto-updating reloads the page the moment a
+      // new build is found, which mid-workout would wipe the running rest timer.
+      // The app offers the update instead and lets you take it between sets.
+      registerType: 'prompt',
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Lift — 5/3/1 Tracker',
@@ -28,6 +58,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallbackDenylist: [/^\/__/],
+        // Old precached builds are useless once a new one lands.
+        cleanupOutdatedCaches: true,
       },
     }),
   ],

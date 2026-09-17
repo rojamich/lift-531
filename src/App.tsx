@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { cx } from './components/ui'
+import { UpdateBanner } from './components/UpdateBanner'
 import { useBackDismiss } from './components/useBackDismiss'
 import { CycleScreen } from './screens/CycleScreen'
 import { ErrorScreen, ProgressionSheet, SaveErrorBanner } from './screens/ErrorScreen'
@@ -81,6 +82,7 @@ export default function App() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg px-4 pt-4">
+      <UpdateBanner />
       <SaveErrorBanner />
       {visible === 'today' ? <HomeScreen /> : null}
       {visible === 'cycle' ? <CycleScreen /> : null}
