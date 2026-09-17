@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink-950: #07090f;
+  --color-ink-900: #0b0f17;
+  --color-ink-850: #111726;
+  --color-ink-800: #161d2e;
+  --color-ink-700: #212b42;
+  --color-ink-600: #33405e;
+  --color-ink-400: #7d8aa8;
+  --color-ink-300: #a8b3cc;
+  --color-ink-100: #e6ebf5;
+
+  --color-brand-400: #5eead4;
+  --color-brand-500: #2dd4bf;
+  --color-brand-600: #14b8a6;
+
+  --color-flame-400: #fbbf24;
+  --color-flame-500: #f59e0b;
+
+  --font-display: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-numeric: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+/*
+ * These resets MUST live in the base layer. Unlayered rules outrank every
+ * cascade layer, so a bare `button { color: inherit }` silently beats
+ * `text-transparent` and every other color utility on a button.
+ */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    /* Keep the tab bar clear of the iOS home indicator. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* iOS zooms the page when a focused input is under 16px. */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1rem);
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    appearance: textfield;
+  }
+}
+
+@layer utilities {
+  /* Numbers you read mid-set should never reflow as they change width. */
+  .tabular {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .print-hide {
+    display: none !important;
+  }
+  .print-page {
+    break-inside: avoid;
+  }
+}
