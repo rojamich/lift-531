@@ -19,9 +19,13 @@ remembers where you left off, progresses your accessories, and fits on a phone.
 - **Accessories that progress themselves.** Per-day plans with sets, rep ranges,
   target weight and rest. Each shows what you did last time, and clearing the top
   of the range on every set raises the target for next time automatically.
+- **Supersets.** Group adjacent accessories in the plan and they run back to
+  back in the workout, with one rest after the round instead of between them.
+- **Undo.** Every edit during a workout is reversible from the header, and a
+  swap can always be put back to what the plan asked for.
 - **Equipment swaps.** Tell it what today's gym has and swap any lift — main or
   accessory — for a same-pattern alternate. The load converts automatically so
-  the cycle keeps moving. When a dumbbell prescription exceeds the heaviest bell
+  the cycle keeps moving, and a swap never destroys the weight you had. When a dumbbell prescription exceeds the heaviest bell
   on hand, the weight holds at the cap and the rep target rises to match, which
   is what the spreadsheet's Apartment tab did.
 - **Pounds or kilograms.** Weights are stored once and converted for display, so

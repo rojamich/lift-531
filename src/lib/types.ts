@@ -139,6 +139,11 @@ export interface PlannedAccessory {
   restSeconds: number
   notes: string
   active: boolean
+  /**
+   * Accessories sharing an id are performed back to back as a superset: no rest
+   * between them, one rest after the round.
+   */
+  supersetId?: string
 }
 
 export type SetKind = 'warmup' | 'main' | 'supplemental'

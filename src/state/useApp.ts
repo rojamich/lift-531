@@ -12,11 +12,13 @@ import {
   nextCycleFrom,
   nextSession,
   refreshCycle,
+  resolveSwapWeightKg,
   substituteTrainingMaxKg,
   today,
 } from '../lib/cycle'
 import { progressAccessories, type AccessoryBump } from '../lib/progression'
 import { createProfile, DEFAULT_SETTINGS, type SeedKind } from '../lib/defaults'
+import { getExercise } from '../lib/exercises'
 import { findTemplate } from '../lib/templates'
 import type {
   Cycle,
@@ -51,6 +53,8 @@ interface AppState {
    * in the session screen, which unmounts the moment the workout closes.
    */
   pendingBumps: AccessoryBump[] | null
+  /** Snapshots of the active cycle taken before each reversible edit. */
+  undoStack: { label: string; cycleId: string; cycle: Cycle }[]
 
   init: () => void
   setLocalUser: (uid: string, displayName: string) => Promise<void>
@@ -58,6 +62,10 @@ interface AppState {
   signOut: () => Promise<void>
   dismissSaveError: () => void
   dismissBumps: () => void
+  /** Reverts the last edit and returns its label, or null if there was none. */
+  undo: () => string | null
+  addAccessorySet: (key: string, planId: string) => void
+  removeAccessorySet: (key: string, planId: string) => void
   retryLoad: () => void
 
   updateSettings: (patch: Partial<Settings>) => void
@@ -151,6 +159,29 @@ export const useApp = create<AppState>((set, get) => {
     persistCycle(updated)
   }
 
+  const UNDO_LIMIT = 25
+  /**
+   * Snapshot before a reversible edit. `coalesceKey` collapses a run of edits to
+   * the same field — typing a weight should be one undo, not one per keystroke.
+   */
+  let lastCoalesce: { key: string; at: number } | null = null
+  const pushUndo = (label: string, coalesceKey?: string) => {
+    const cycle = activeCycleOf(get())
+    if (!cycle) return
+    const now = Date.now()
+    if (coalesceKey) {
+      if (lastCoalesce && lastCoalesce.key === coalesceKey && now - lastCoalesce.at < 5000) {
+        lastCoalesce = { key: coalesceKey, at: now }
+        return
+      }
+      lastCoalesce = { key: coalesceKey, at: now }
+    } else {
+      lastCoalesce = null
+    }
+    const stack = [...get().undoStack, { label, cycleId: cycle.id, cycle: structuredClone(cycle) }]
+    set({ undoStack: stack.slice(-UNDO_LIMIT) })
+  }
+
   const mutateSession = (key: string, fn: (session: Session) => Session) => {
     mutateCycle((cycle) => {
       const session = cycle.sessions[key]
@@ -199,6 +230,7 @@ export const useApp = create<AppState>((set, get) => {
     saveError: null,
     openSessionKey: null,
     pendingBumps: null,
+    undoStack: [],
 
     init() {
       if (!firebaseEnabled) {
@@ -278,6 +310,48 @@ export const useApp = create<AppState>((set, get) => {
 
     dismissBumps() {
       set({ pendingBumps: null })
+    },
+
+    undo() {
+      const state = get()
+      const entry = state.undoStack[state.undoStack.length - 1]
+      if (!entry) return null
+      lastCoalesce = null
+      const restored = { ...entry.cycle, updatedAt: new Date().toISOString() }
+      set({
+        cycles: state.cycles.map((c) => (c.id === restored.id ? restored : c)),
+        undoStack: state.undoStack.slice(0, -1),
+      })
+      persistCycle(restored)
+      return entry.label
+    },
+
+    addAccessorySet(key, planId) {
+      pushUndo('added a set')
+      mutateSession(key, (session) => ({
+        ...session,
+        accessories: session.accessories.map((a) =>
+          a.planId === planId
+            ? {
+                ...a,
+                sets: [
+                  ...a.sets,
+                  { done: false, weightKg: a.sets[a.sets.length - 1]?.weightKg ?? a.targetWeightKg, reps: null },
+                ],
+              }
+            : a,
+        ),
+      }))
+    },
+
+    removeAccessorySet(key, planId) {
+      pushUndo('removed a set')
+      mutateSession(key, (session) => ({
+        ...session,
+        accessories: session.accessories.map((a) =>
+          a.planId === planId && a.sets.length > 1 ? { ...a, sets: a.sets.slice(0, -1) } : a,
+        ),
+      }))
     },
 
     retryLoad() {
@@ -367,6 +441,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     patchSet(key, setId, patch) {
+      pushUndo('set edit', `set:${key}:${setId}:${Object.keys(patch).join(',')}`)
       mutateSession(key, (session) => ({
         ...session,
         mainSets: session.mainSets.map((s) => (s.id === setId ? { ...s, ...patch } : s)),
@@ -375,6 +450,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     patchAccessorySet(key, planId, index, patch) {
+      pushUndo('set edit', `acc:${key}:${planId}:${index}:${Object.keys(patch).join(',')}`)
       mutateSession(key, (session) => ({
         ...session,
         accessories: session.accessories.map((a) =>
@@ -386,6 +462,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setAccessorySkipped(key, planId, skipped) {
+      pushUndo(skipped ? 'skipped an exercise' : 'un-skipped an exercise')
       mutateSession(key, (session) => ({
         ...session,
         accessories: session.accessories.map((a) => (a.planId === planId ? { ...a, skipped } : a)),
@@ -393,18 +470,38 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     swapAccessoryExercise(key, planId, exerciseId, weightKg) {
-      mutateSession(key, (session) => ({
-        ...session,
-        accessories: session.accessories.map((a) =>
-          a.planId === planId
-            ? {
-                ...a,
-                exerciseId,
-                targetWeightKg: weightKg,
-                sets: a.sets.map((s) => (s.done ? s : { ...s, weightKg })),
-              }
-            : a,
-        ),
+      const state = get()
+      const cycle = activeCycleOf(state)
+      const session = cycle?.sessions[key]
+      if (!cycle || !session) return
+      const planned = (cycle.accessoryPlan[session.slot] ?? []).find((p) => p.id === planId)
+      const target = getExercise(exerciseId, state.profile?.customExercises ?? [])
+
+      /*
+       * Never lose a weight on a swap. Converting between, say, a cable row and
+       * a plank has no sensible answer, and the old behaviour wrote null — which
+       * read as "bodyweight" and could not be swapped back, because there was no
+       * longer a weight to convert from.
+       */
+      pushUndo(`swapped to ${target.name}`)
+      mutateSession(key, (current) => ({
+        ...current,
+        accessories: current.accessories.map((a) => {
+          if (a.planId !== planId) return a
+          const next = resolveSwapWeightKg({
+            planned,
+            toExerciseId: exerciseId,
+            currentKg: a.targetWeightKg,
+            convertedKg: weightKg,
+            custom: state.profile?.customExercises ?? [],
+          })
+          return {
+            ...a,
+            exerciseId,
+            targetWeightKg: next,
+            sets: a.sets.map((set) => (set.done ? set : { ...set, weightKg: next })),
+          }
+        }),
       }))
     },
 
@@ -413,6 +510,7 @@ export const useApp = create<AppState>((set, get) => {
       const profile = state.profile
       const cycle = activeCycleOf(state)
       if (!profile || !cycle) return
+      pushUndo(`swapped to ${getExercise(exerciseId, profile.customExercises).name}`)
       mutateSession(key, (session) => {
         const planned = cycle.lifts.find((l) => l.slot === session.slot)?.exerciseId
         const trainingMaxKg = substituteTrainingMaxKg(cycle, session.slot, exerciseId, profile.settings)
@@ -439,6 +537,7 @@ export const useApp = create<AppState>((set, get) => {
       const session = cycle?.sessions[key]
       if (!profile || !cycle || !session) return []
 
+      pushUndo('finished the workout')
       const bumps: AccessoryBump[] = []
       mutateCycle((current) => {
         const target = current.sessions[key]
@@ -485,6 +584,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     refreshFromMaxes() {
+      pushUndo('updated training maxes')
       const state = get()
       const profile = state.profile
       const cycle = activeCycleOf(state)
@@ -499,6 +599,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     skipSession(key) {
+      pushUndo('skipped the day')
       mutateSession(key, (session) => ({ ...session, status: 'skipped' }))
       set({ openSessionKey: null })
     },

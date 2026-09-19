@@ -391,6 +391,37 @@ function AccessoryEditor({ slot }: { slot: DaySlot }) {
                 onChange={(active) => patch(item.id, { active })}
                 label={item.active ? 'In the plan' : 'Paused'}
               />
+              {index < items.length - 1 ? (
+                <Toggle
+                  checked={Boolean(item.supersetId) && item.supersetId === items[index + 1]?.supersetId}
+                  onChange={(on) => {
+                    const next = items[index + 1]
+                    if (!next) return
+                    if (on) {
+                      // Join the run this item already belongs to, so three or
+                      // more in a row form one superset rather than pairs.
+                      const id = item.supersetId ?? newId()
+                      update(
+                        items.map((entry) =>
+                          entry.id === item.id
+                            ? { ...entry, supersetId: id }
+                            : entry.id === next.id
+                              ? { ...entry, supersetId: id }
+                              : entry,
+                        ),
+                      )
+                    } else {
+                      update(
+                        items.map((entry) =>
+                          entry.id === next.id ? { ...entry, supersetId: undefined } : entry,
+                        ),
+                      )
+                    }
+                  }}
+                  label={`Superset with ${getExercise(items[index + 1].exerciseId, profile.customExercises).name}`}
+                  hint="No rest between them; one rest after the round"
+                />
+              ) : null}
             </div>
 
             <ExerciseSwap

@@ -14,6 +14,7 @@ import {
   type Cycle,
   type CycleLift,
   type DaySlot,
+  type Exercise,
   type Lift,
   type LoggedAccessory,
   type LoggedSet,
@@ -351,4 +352,27 @@ export function refreshCycle(cycle: Cycle, profile: Profile): Cycle {
   }
 
   return { ...refreshed, sessions }
+}
+
+/**
+ * What an accessory should weigh after being swapped.
+ *
+ * The rule exists because the naive answer loses data: converting between, say,
+ * a cable row and a plank has no sensible number, and writing null there reads
+ * as "bodyweight" and cannot be swapped back — there is no longer a weight to
+ * convert from. So a missing conversion keeps what was there unless the new
+ * movement genuinely has no load, and returning to the planned exercise
+ * restores the planned weight exactly rather than round-tripping an estimate.
+ */
+export function resolveSwapWeightKg(args: {
+  planned: PlannedAccessory | undefined
+  toExerciseId: string
+  currentKg: number | null
+  convertedKg: number | null
+  custom?: Exercise[]
+}): number | null {
+  const { planned, toExerciseId, currentKg, convertedKg, custom = [] } = args
+  if (planned && toExerciseId === planned.exerciseId) return planned.targetWeightKg
+  if (convertedKg !== null) return convertedKg
+  return getExercise(toExerciseId, custom).equipment === 'bodyweight' ? null : currentKg
 }

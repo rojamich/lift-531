@@ -7,7 +7,7 @@ import { contextFor, liftFor, mainExerciseId, prescriptionFor } from '../lib/cyc
 import { getExercise } from '../lib/exercises'
 import { bestAmrap, findLastAccessory, suggestAccessory } from '../lib/progression'
 import { sessionToText, shareText } from '../lib/share'
-import type { Cycle, LoggedAccessory, LoggedSet, Profile, Session } from '../lib/types'
+import type { Cycle, LoggedAccessory, LoggedSet, PlannedAccessory, Profile, Session } from '../lib/types'
 import { describePlates, platesFor } from '../lib/units'
 import { useApp } from '../state/useApp'
 
@@ -157,26 +157,30 @@ function AccessoryCard({
   sessionKey,
   cycles,
   profile,
+  plan,
   onRest,
+  restsAfterThis = true,
+  groupLabel,
 }: {
   accessory: LoggedAccessory
   sessionKey: string
   cycles: Cycle[]
   profile: Profile
+  plan: PlannedAccessory | undefined
   onRest: (seconds: number) => void
+  /** False for all but the last exercise of a superset — no rest mid-round. */
+  restsAfterThis?: boolean
+  groupLabel?: string
 }) {
   const weight = useWeight()
   const patchAccessorySet = useApp((s) => s.patchAccessorySet)
   const setAccessorySkipped = useApp((s) => s.setAccessorySkipped)
   const swapAccessoryExercise = useApp((s) => s.swapAccessoryExercise)
+  const addAccessorySet = useApp((s) => s.addAccessorySet)
+  const removeAccessorySet = useApp((s) => s.removeAccessorySet)
   const [swapping, setSwapping] = useState(false)
 
   const exercise = getExercise(accessory.exerciseId, profile.customExercises)
-  const plan = profile.accessoryPlan[
-    (Object.keys(profile.accessoryPlan) as (keyof typeof profile.accessoryPlan)[]).find((slot) =>
-      profile.accessoryPlan[slot].some((a) => a.id === accessory.planId),
-    ) ?? 'A'
-  ]?.find((a) => a.id === accessory.planId)
 
   const history = useMemo(
     () => findLastAccessory(cycles, accessory.planId, accessory.exerciseId),
@@ -194,6 +198,11 @@ function AccessoryCard({
     <Card className={cx('overflow-hidden', accessory.skipped && 'opacity-50')}>
       <div className="flex items-start justify-between gap-3 px-3 pt-3">
         <div className="min-w-0">
+          {groupLabel ? (
+            <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-400">
+              {groupLabel}
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={() => setSwapping(true)}
@@ -259,7 +268,7 @@ function AccessoryCard({
                     done: next,
                     reps: next ? set.reps ?? null : set.reps,
                   })
-                  if (next) onRest(restSeconds)
+                  if (next && restsAfterThis) onRest(restSeconds)
                 }}
                 className={cx(
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 text-sm font-bold transition',
@@ -291,6 +300,26 @@ function AccessoryCard({
               </div>
             </div>
           ))}
+          <div className="flex gap-2 pt-0.5">
+            <Button
+              size="sm"
+              variant="quiet"
+              className="flex-1"
+              onClick={() => addAccessorySet(sessionKey, accessory.planId)}
+            >
+              + set
+            </Button>
+            {accessory.sets.length > 1 ? (
+              <Button
+                size="sm"
+                variant="quiet"
+                className="flex-1"
+                onClick={() => removeAccessorySet(sessionKey, accessory.planId)}
+              >
+                − set
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -298,6 +327,7 @@ function AccessoryCard({
         open={swapping}
         onClose={() => setSwapping(false)}
         exerciseId={accessory.exerciseId}
+        plannedExerciseId={plan?.exerciseId}
         currentWeightKg={accessory.targetWeightKg}
         onPick={(id, converted) => swapAccessoryExercise(sessionKey, accessory.planId, id, converted)}
       />
@@ -314,6 +344,8 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
   const setSessionNotes = useApp((s) => s.setSessionNotes)
   const swapMainExercise = useApp((s) => s.swapMainExercise)
   const closeSession = useApp((s) => s.closeSession)
+  const undo = useApp((s) => s.undo)
+  const canUndo = useApp((s) => s.undoStack.length > 0)
 
   const weight = useWeight()
   const toast = useToast()
@@ -359,6 +391,21 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
   const doneTotal = doneCount + accessorySets.filter((s) => s.done).length
   const anyCapped = [...prescription.main, ...prescription.supplemental].some((s) => s.capped)
 
+  const planItems = cycle.accessoryPlan[session.slot] ?? []
+  const planById = new Map(planItems.map((item) => [item.id, item]))
+  /*
+   * Consecutive accessories sharing a supersetId are performed as one round.
+   * Grouping only adjacent entries keeps the order you set in the plan
+   * meaningful, rather than pulling exercises together from across the day.
+   */
+  const accessoryGroups: { id: string; items: typeof session.accessories }[] = []
+  for (const accessory of session.accessories) {
+    const supersetId = planById.get(accessory.planId)?.supersetId
+    const last = accessoryGroups[accessoryGroups.length - 1]
+    if (supersetId && last && last.id === supersetId) last.items.push(accessory)
+    else accessoryGroups.push({ id: supersetId ?? accessory.planId, items: [accessory] })
+  }
+
   const onRest = (seconds: number) => {
     if (profile.settings.autoStartRest) timer.start(seconds)
   }
@@ -402,9 +449,23 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
               </span>
             </div>
           </div>
-          <Button size="sm" variant="quiet" onClick={share}>
-            Share
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {canUndo ? (
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => {
+                  const label = undo()
+                  if (label) toast.show(`Undid ${label}`)
+                }}
+              >
+                ↩ Undo
+              </Button>
+            ) : null}
+            <Button size="sm" variant="quiet" onClick={share}>
+              Share
+            </Button>
+          </div>
         </div>
 
         <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink-800">
@@ -518,16 +579,36 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
           </Empty>
         ) : (
           <div className="space-y-2.5">
-            {session.accessories.map((accessory) => (
-              <AccessoryCard
-                key={accessory.planId}
-                accessory={accessory}
-                sessionKey={session.key}
-                cycles={cycles}
-                profile={profile}
-                onRest={onRest}
-              />
-            ))}
+            {accessoryGroups.map((group) => {
+              const single = group.items.length === 1
+              const body = group.items.map((accessory, index) => (
+                <AccessoryCard
+                  key={accessory.planId}
+                  accessory={accessory}
+                  sessionKey={session.key}
+                  cycles={cycles}
+                  profile={profile}
+                  plan={planById.get(accessory.planId)}
+                  onRest={onRest}
+                  // In a superset you move straight to the next exercise; the
+                  // rest belongs at the end of the round.
+                  restsAfterThis={index === group.items.length - 1}
+                  groupLabel={single ? undefined : `Superset ${String.fromCharCode(65 + index)}`}
+                />
+              ))
+              if (single) return body
+              return (
+                <div
+                  key={group.id}
+                  className="space-y-2 rounded-2xl border border-brand-600/30 bg-brand-500/[0.04] p-2"
+                >
+                  <div className="px-1 pt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-400">
+                    Superset · back to back, rest after the round
+                  </div>
+                  {body}
+                </div>
+              )
+            })}
           </div>
         )}
       </section>
@@ -559,6 +640,7 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
         exerciseId={exercise.id}
         currentWeightKg={lift?.trainingMaxKg ?? null}
         title={`Swap ${lift?.label ?? exercise.name}`}
+        plannedExerciseId={lift?.exerciseId}
         onPick={(id) => swapMainExercise(session.key, id)}
       />
 

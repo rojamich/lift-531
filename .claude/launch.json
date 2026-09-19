@@ -18,6 +18,15 @@
         "preview"
       ],
       "port": 4173
+    },
+    {
+      "name": "dev:local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:local"
+      ],
+      "port": 5174
     }
   ]
 }

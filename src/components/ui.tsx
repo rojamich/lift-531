@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useBackDismiss } from './useBackDismiss'
 
 export const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(' ')
@@ -175,6 +176,7 @@ export function Sheet({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
 
   // System back closes the sheet rather than leaving the app.
   useBackDismiss(open, onClose)
@@ -187,6 +189,8 @@ export function Sheet({
     document.addEventListener('keydown', onKey)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    // Always open at the top, however far the page behind was scrolled.
+    scroller.current?.scrollTo({ top: 0 })
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = previous
@@ -195,7 +199,14 @@ export function Sheet({
 
   if (!open) return null
 
-  return (
+  /*
+   * Portalled to the body on purpose. Sheets are rendered from inside cards, and
+   * Card carries `backdrop-blur`; a backdrop-filter ancestor becomes the
+   * containing block for position:fixed descendants, so `inset-0` would resolve
+   * to the card's box rather than the viewport and the sheet would open
+   * half off-screen, wherever that card happened to be scrolled to.
+   */
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center print-hide">
       <div
         className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm"
@@ -215,9 +226,12 @@ export function Sheet({
             Done
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {children}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

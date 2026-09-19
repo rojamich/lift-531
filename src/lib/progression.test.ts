@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { EquipmentContext } from './engine'
-import { createCycle, cycleMaxDrift, refreshCycle, hydrateSession, prescriptionFor } from './cycle'
+import {
+  createCycle,
+  cycleMaxDrift,
+  hydrateSession,
+  prescriptionFor,
+  refreshCycle,
+  resolveSwapWeightKg,
+} from './cycle'
 import { DEFAULT_SETTINGS, createProfile } from './defaults'
 import { progressAccessories, parseRepRange } from './progression'
 import { findTemplate } from './templates'
@@ -194,5 +201,82 @@ describe('refreshing a cycle after a max changes', () => {
     expect(refreshed.sessions.w1C).toEqual(done)
     // The next day still picks up the new number.
     expect(prescriptionFor(refreshed, refreshed.sessions.w2C, settings).trainingMax).toBe(190)
+  })
+})
+
+describe('swapping an accessory never loses the weight', () => {
+  const planned: PlannedAccessory = {
+    id: 'p1',
+    exerciseId: 'seated-cable-row',
+    sets: 3,
+    targetReps: '10-12',
+    targetWeightKg: lbToKg(80),
+    restSeconds: 90,
+    notes: '',
+    active: true,
+  }
+
+  it('uses the converted weight when the movements compare', () => {
+    const next = resolveSwapWeightKg({
+      planned,
+      toExerciseId: 'db-row',
+      currentKg: lbToKg(80),
+      convertedKg: lbToKg(40),
+    })
+    expect(inLb(next as number)).toBe(40)
+  })
+
+  it('drops to bodyweight only for movements that have no load', () => {
+    expect(
+      resolveSwapWeightKg({
+        planned,
+        toExerciseId: 'inverted-row',
+        currentKg: lbToKg(80),
+        convertedKg: null,
+      }),
+    ).toBeNull()
+  })
+
+  it('keeps the weight when a loadable movement has no conversion', () => {
+    const next = resolveSwapWeightKg({
+      planned,
+      toExerciseId: 't-bar-row',
+      currentKg: lbToKg(80),
+      convertedKg: null,
+    })
+    expect(inLb(next as number)).toBe(80)
+  })
+
+  it('restores the planned weight when swapping back — the reported bug', () => {
+    // Swap to a bodyweight movement, which zeroes the load...
+    const gone = resolveSwapWeightKg({
+      planned,
+      toExerciseId: 'inverted-row',
+      currentKg: lbToKg(80),
+      convertedKg: null,
+    })
+    expect(gone).toBeNull()
+
+    // ...then back. The old code converted from null and left it at bodyweight
+    // with no way to recover the number.
+    const restored = resolveSwapWeightKg({
+      planned,
+      toExerciseId: planned.exerciseId,
+      currentKg: gone,
+      convertedKg: null,
+    })
+    expect(inLb(restored as number)).toBe(80)
+  })
+
+  it('restores the plan even when the plan itself is bodyweight', () => {
+    const bodyweightPlan = { ...planned, exerciseId: 'ab-wheel', targetWeightKg: null }
+    expect(
+      resolveSwapWeightKg({
+        planned: bodyweightPlan,
+        toExerciseId: 'ab-wheel',
+        currentKg: lbToKg(20),
+        convertedKg: null,
+      }),
+    ).toBeNull()
   })
 })

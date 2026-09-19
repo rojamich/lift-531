@@ -19,13 +19,23 @@ interface Props {
   /** Current load, so the sheet can show what each alternate would become. */
   currentWeightKg?: number | null
   title?: string
+  /** What the plan asked for, when the day is running on a substitute. */
+  plannedExerciseId?: string
   onPick: (exerciseId: string, convertedWeightKg: number | null) => void
 }
 
 /** Stable empty list — a fresh `[]` each render would defeat the memo below. */
 const NO_EQUIPMENT: Equipment[] = []
 
-export function ExerciseSwap({ open, onClose, exerciseId, currentWeightKg, title, onPick }: Props) {
+export function ExerciseSwap({
+  open,
+  onClose,
+  exerciseId,
+  currentWeightKg,
+  title,
+  plannedExerciseId,
+  onPick,
+}: Props) {
   const settings = useApp((s) => s.profile?.settings)
   const custom = useApp((s) => s.profile?.customExercises ?? [])
   const weight = useWeight()
@@ -80,6 +90,27 @@ export function ExerciseSwap({ open, onClose, exerciseId, currentWeightKg, title
         Same movement, different equipment. Converted loads are an estimate to keep the cycle moving — adjust
         on the first set if it feels off.
       </p>
+
+      {plannedExerciseId && plannedExerciseId !== exerciseId ? (
+        <button
+          type="button"
+          onClick={() => {
+            // Handled upstream: picking the planned exercise restores its exact
+            // planned weight rather than converting back through an estimate.
+            onPick(plannedExerciseId, null)
+            onClose()
+          }}
+          className="mb-3 flex w-full items-center justify-between gap-3 rounded-xl border border-brand-500 bg-brand-500/10 px-3 py-2.5 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-brand-400">
+              Back to {getExercise(plannedExerciseId, custom).name}
+            </span>
+            <span className="block text-xs text-ink-400">Restores the weight this day was planned with</span>
+          </span>
+          <span className="shrink-0 text-brand-400">↩</span>
+        </button>
+      ) : null}
 
       <div className="mb-3 flex gap-2">
         <Pill active={!browsing} onClick={() => setBrowsing(false)}>
