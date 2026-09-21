@@ -181,21 +181,34 @@ export function Sheet({
   // System back closes the sheet rather than leaving the app.
   useBackDismiss(open, onClose)
 
+  /*
+   * Held in a ref so the effect below can depend on `open` alone.
+   * Callers pass an inline arrow, which is a new function every render, and
+   * with `onClose` in the dependency list this effect re-ran on every render of
+   * the parent — resetting the scroll position each time. With a rest timer
+   * ticking four times a second that made the list impossible to scroll: it
+   * sprang back to the top continuously.
+   */
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  })
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') closeRef.current()
     }
     document.addEventListener('keydown', onKey)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    // Always open at the top, however far the page behind was scrolled.
+    // Open at the top, however far the page behind was scrolled. Once only.
     scroller.current?.scrollTo({ top: 0 })
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = previous
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
