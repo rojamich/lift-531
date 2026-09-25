@@ -2,11 +2,18 @@ import { useEffect, useRef } from 'react'
 
 /**
  * Makes the system back button close the topmost layer instead of leaving the
- * app. Installed once; every open sheet, workout or non-default tab registers
- * a dismisser and pushes a history entry to consume.
+ * app. Sheets, the open workout and any non-default tab register a dismisser.
  *
- * Closing by tapping (rather than by going back) removes the entry it pushed,
- * so the history never fills with stale entries that make Back a no-op.
+ * A single "guard" history entry exists whenever at least one layer is open,
+ * rather than one entry per layer. Per-layer entries looked tidier but raced:
+ * finishing a workout unmounts the finish sheet and the workout screen while
+ * mounting the summary sheet, so two `history.back()` calls and one
+ * `pushState` landed in the same tick and cancelled each other out. The app was
+ * then parked on its first history entry with a layer still registered, and the
+ * next back press left the app with the sheet still on screen.
+ *
+ * Reconciling once per tick, against the layer *count*, removes the race: a
+ * layer replacing another touches history not at all.
  */
 interface Layer {
   id: number
@@ -15,28 +22,53 @@ interface Layer {
 
 const layers: Layer[] = []
 let nextId = 1
-/** Pops we triggered ourselves, which must not close another layer. */
-let selfInflicted = 0
+/** True when our guard entry is the current history entry. */
+let guarded = false
+/** Pops we caused ourselves, which must not close a layer. */
+let suppress = 0
 let listening = false
+let scheduled = false
+
+function reconcile() {
+  if (typeof window === 'undefined') return
+  if (layers.length > 0 && !guarded) {
+    guarded = true
+    window.history.pushState({ liftGuard: true }, '')
+  } else if (layers.length === 0 && guarded) {
+    guarded = false
+    suppress += 1
+    window.history.back()
+  }
+}
+
+/** Batch to a microtask so a whole React commit settles before touching history. */
+function schedule() {
+  if (scheduled) return
+  scheduled = true
+  queueMicrotask(() => {
+    scheduled = false
+    reconcile()
+  })
+}
 
 function ensureListener() {
   if (listening || typeof window === 'undefined') return
   listening = true
   window.addEventListener('popstate', () => {
-    if (selfInflicted > 0) {
-      selfInflicted -= 1
+    if (suppress > 0) {
+      suppress -= 1
       return
     }
+    if (!guarded) return // Not our entry; let the browser navigate.
+    guarded = false // The guard was just consumed by this pop.
     const top = layers.pop()
-    // With nothing registered the browser has already navigated away, which is
-    // the correct behaviour at the root of the app.
     if (top) top.close()
+    // Re-arm for whatever is still open underneath.
+    reconcile()
   })
 }
 
 export function useBackDismiss(active: boolean, close: () => void) {
-  // Kept current in an effect rather than during render, so the registered
-  // layer always calls the latest handler without re-registering.
   const closeRef = useRef(close)
   useEffect(() => {
     closeRef.current = close
@@ -48,15 +80,13 @@ export function useBackDismiss(active: boolean, close: () => void) {
 
     const id = nextId++
     layers.push({ id, close: () => closeRef.current() })
-    window.history.pushState({ liftLayer: id }, '')
+    schedule()
 
     return () => {
       const index = layers.findIndex((layer) => layer.id === id)
-      // Already gone means popstate handled it; the entry is spent.
-      if (index === -1) return
-      layers.splice(index, 1)
-      selfInflicted += 1
-      window.history.back()
+      // Already gone means a popstate handled it.
+      if (index !== -1) layers.splice(index, 1)
+      schedule()
     }
   }, [active])
 }

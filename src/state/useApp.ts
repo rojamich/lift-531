@@ -53,6 +53,8 @@ interface AppState {
    * in the session screen, which unmounts the moment the workout closes.
    */
   pendingBumps: AccessoryBump[] | null
+  /** Day the pending proposals belong to. */
+  pendingBumpsSlot: DaySlot | null
   /** Snapshots of the active cycle taken before each reversible edit. */
   undoStack: { label: string; cycleId: string; cycle: Cycle }[]
 
@@ -83,8 +85,10 @@ interface AppState {
   swapAccessoryExercise: (key: string, planId: string, exerciseId: string, weightKg: number | null) => void
   swapMainExercise: (key: string, exerciseId: string) => void
   setSessionNotes: (key: string, notes: string) => void
-  /** Returns any accessory targets that went up, for the post-workout summary. */
+  /** Returns proposed accessory increases for confirmation; nothing is written yet. */
   completeSession: (key: string) => AccessoryBump[]
+  /** Commits the increases the lifter accepted, at whatever weight they chose. */
+  applyBumps: (accepted: AccessoryBump[]) => void
   refreshFromMaxes: () => void
   reopenSession: (key: string) => void
   skipSession: (key: string) => void
@@ -230,6 +234,7 @@ export const useApp = create<AppState>((set, get) => {
     saveError: null,
     openSessionKey: null,
     pendingBumps: null,
+    pendingBumpsSlot: null,
     undoStack: [],
 
     init() {
@@ -309,7 +314,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     dismissBumps() {
-      set({ pendingBumps: null })
+      set({ pendingBumps: null, pendingBumpsSlot: null })
     },
 
     undo() {
@@ -538,49 +543,61 @@ export const useApp = create<AppState>((set, get) => {
       if (!profile || !cycle || !session) return []
 
       pushUndo('finished the workout')
-      const bumps: AccessoryBump[] = []
-      mutateCycle((current) => {
-        const target = current.sessions[key]
-        if (!target) return current
-        const done: Session = {
-          ...target,
-          status: 'complete',
-          completedDate: target.completedDate ?? new Date().toISOString(),
-        }
+      mutateSession(key, (target) => ({
+        ...target,
+        status: 'complete',
+        completedDate: target.completedDate ?? new Date().toISOString(),
+      }))
 
-        if (!profile.settings.autoProgressAccessories) {
-          return { ...current, sessions: { ...current.sessions, [key]: done } }
-        }
+      /*
+       * Increases are proposed, not applied. The app can tell you cleared the
+       * range; it cannot tell whether the last rep was clean or whether your
+       * shoulder is complaining, so the decision stays with the lifter.
+       */
+      const proposed = profile.settings.autoProgressAccessories
+        ? progressAccessories(
+            cycle.accessoryPlan[session.slot] ?? [],
+            session.accessories,
+            contextFor(profile.settings),
+          ).bumps
+        : []
 
-        const result = progressAccessories(
-          current.accessoryPlan[target.slot] ?? [],
-          target.accessories,
-          contextFor(profile.settings),
-        )
-        bumps.push(...result.bumps)
-        return {
-          ...current,
-          accessoryPlan: { ...current.accessoryPlan, [target.slot]: result.plan },
-          sessions: { ...current.sessions, [key]: done },
-        }
+      set({
+        openSessionKey: null,
+        pendingBumps: proposed.length > 0 ? proposed : null,
+        pendingBumpsSlot: proposed.length > 0 ? session.slot : null,
       })
+      return proposed
+    },
 
-      // Carry the earned weight into the profile so the next cycle starts there.
-      if (bumps.length > 0) {
-        const byId = new Map(bumps.map((bump) => [bump.planId, bump.toKg]))
-        mutateProfile((current) => ({
-          ...current,
-          accessoryPlan: {
-            ...current.accessoryPlan,
-            [session.slot]: (current.accessoryPlan[session.slot] ?? []).map((item) =>
-              byId.has(item.id) ? { ...item, targetWeightKg: byId.get(item.id) as number } : item,
-            ),
-          },
-        }))
+    applyBumps(accepted) {
+      const state = get()
+      const slot = state.pendingBumpsSlot
+      if (!slot || accepted.length === 0) {
+        set({ pendingBumps: null, pendingBumpsSlot: null })
+        return
       }
+      pushUndo('accepted new accessory weights')
+      const byId = new Map(accepted.map((bump) => [bump.planId, bump.toKg]))
+      const bump = <T extends { id: string; targetWeightKg: number | null }>(item: T): T =>
+        byId.has(item.id) ? { ...item, targetWeightKg: byId.get(item.id) as number } : item
 
-      set({ openSessionKey: null, pendingBumps: bumps.length > 0 ? bumps : null })
-      return bumps
+      mutateCycle((current) => ({
+        ...current,
+        accessoryPlan: {
+          ...current.accessoryPlan,
+          [slot]: (current.accessoryPlan[slot] ?? []).map(bump),
+        },
+      }))
+      // Carry it into the profile too, so the next cycle starts from the new weight.
+      mutateProfile((current) => ({
+        ...current,
+        accessoryPlan: {
+          ...current.accessoryPlan,
+          [slot]: (current.accessoryPlan[slot] ?? []).map(bump),
+        },
+      }))
+      set({ pendingBumps: null, pendingBumpsSlot: null })
     },
 
     refreshFromMaxes() {

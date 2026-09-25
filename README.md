@@ -16,9 +16,10 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   template.
 - **Picks up where you left off.** Opens on the next workout you owe, mid-set if
   that's where you stopped.
-- **Accessories that progress themselves.** Per-day plans with sets, rep ranges,
+- **Accessories that earn their weight.** Per-day plans with sets, rep ranges,
   target weight and rest. Each shows what you did last time, and clearing the top
-  of the range on every set raises the target for next time automatically.
+  of the range on every set prompts an increase after the workout — which you
+  accept, adjust, or decline per exercise.
 - **Supersets.** Group adjacent accessories in the plan and they run back to
   back in the workout, with one rest after the round instead of between them.
 - **Undo.** Every edit during a workout is reversible from the header, and a

@@ -205,8 +205,8 @@ export function SettingsScreen() {
         <Toggle
           checked={settings.autoProgressAccessories}
           onChange={(autoProgressAccessories) => updateSettings({ autoProgressAccessories })}
-          label="Progress accessories automatically"
-          hint="Clear the top of the rep range on every set and the target weight goes up next time"
+          label="Suggest accessory increases"
+          hint="After a workout, offer to add weight to anything where you cleared the top of the rep range"
         />
         <Toggle
           checked={settings.restTimerEnabled}
