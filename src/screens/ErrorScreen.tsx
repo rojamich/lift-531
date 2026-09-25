@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useWeight } from '../components/hooks'
 import { Button, Card, NumberField, Sheet, cx } from '../components/ui'
 import type { FriendlyError } from '../data/errors'
 import { getExercise } from '../lib/exercises'
+import type { AccessoryBump } from '../lib/progression'
 import { useApp } from '../state/useApp'
 
 /** Shown when the app cannot load at all — almost always unpublished rules. */
@@ -81,6 +82,18 @@ export function SaveErrorBanner() {
  */
 export function ProgressionSheet() {
   const bumps = useApp((s) => s.pendingBumps)
+  const dismissBumps = useApp((s) => s.dismissBumps)
+
+  return (
+    <Sheet open={bumps !== null} onClose={dismissBumps} title="Add weight next time?">
+      {/* Choices live in a child so they mount fresh with each proposal, rather
+          than needing an effect to clear the previous workout's answers. */}
+      {bumps ? <BumpChoices bumps={bumps} /> : null}
+    </Sheet>
+  )
+}
+
+function BumpChoices({ bumps }: { bumps: AccessoryBump[] }) {
   const applyBumps = useApp((s) => s.applyBumps)
   const dismissBumps = useApp((s) => s.dismissBumps)
   const weight = useWeight()
@@ -88,13 +101,7 @@ export function ProgressionSheet() {
   const [declined, setDeclined] = useState<Set<string>>(new Set())
   const [edited, setEdited] = useState<Record<string, number>>({})
 
-  // Start each proposal fresh whenever a new set of them arrives.
-  useEffect(() => {
-    setDeclined(new Set())
-    setEdited({})
-  }, [bumps])
-
-  const accepted = (bumps ?? [])
+  const accepted = bumps
     .filter((bump) => !declined.has(bump.planId))
     .map((bump) => ({ ...bump, toKg: edited[bump.planId] ?? bump.toKg }))
 
@@ -107,14 +114,14 @@ export function ProgressionSheet() {
     })
 
   return (
-    <Sheet open={bumps !== null} onClose={dismissBumps} title="Add weight next time?">
+    <>
       <p className="text-sm text-ink-300">
         You cleared the top of the rep range on every set of these. Take the increase, adjust it, or leave any
         of them where they are.
       </p>
 
       <ul className="mt-3 space-y-1.5">
-        {(bumps ?? []).map((bump) => {
+        {bumps.map((bump) => {
           const isDeclined = declined.has(bump.planId)
           const value = edited[bump.planId] ?? bump.toKg
           return (
@@ -197,6 +204,6 @@ export function ProgressionSheet() {
         Whatever you choose applies to the rest of this cycle and the next one. Change it any time under Plan,
         or turn these prompts off in Settings.
       </p>
-    </Sheet>
+    </>
   )
 }
