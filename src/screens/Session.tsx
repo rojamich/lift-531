@@ -5,7 +5,7 @@ import { RestTimerBar, useRestTimer, formatClock } from '../components/RestTimer
 import { Button, Card, Empty, Input, NumberField, SectionTitle, Sheet, Toast, cx } from '../components/ui'
 import { contextFor, liftFor, mainExerciseId, prescriptionFor } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
-import { bestAmrap, findLastAccessory, suggestAccessory } from '../lib/progression'
+import { bestAmrap, findLastAccessory, repGoal, suggestAccessory } from '../lib/progression'
 import { sessionToText, shareText } from '../lib/share'
 import type { Cycle, LoggedAccessory, LoggedSet, PlannedAccessory, Profile, Session } from '../lib/types'
 import { describePlates, platesFor } from '../lib/units'
@@ -294,7 +294,7 @@ function AccessoryCard({
                 <NumberCell
                   ariaLabel={`Set ${index + 1} reps`}
                   value={set.reps}
-                  placeholder={accessory.targetReps}
+                  placeholder={repGoal(accessory.targetReps)}
                   onChange={(next) => patchAccessorySet(sessionKey, accessory.planId, index, { reps: next })}
                 />
               </div>

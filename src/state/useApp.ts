@@ -4,6 +4,7 @@ import { describeFirebaseError, type FriendlyError } from '../data/errors'
 import { firebaseEnabled } from '../data/firebase'
 import { localStore, store } from '../data/store'
 import {
+  applyAccessoryPlan,
   contextFor,
   createCycle,
   hydrateSession,
@@ -386,14 +387,10 @@ export const useApp = create<AppState>((set, get) => {
         ...profile,
         accessoryPlan: { ...profile.accessoryPlan, [slot]: items },
       }))
-      // Keep the running cycle in step, but never disturb a day already logged.
-      mutateCycle((cycle) => {
-        const session = Object.values(cycle.sessions).find(
-          (s) => s.slot === slot && (s.status === 'complete' || s.status === 'skipped'),
-        )
-        if (session) return cycle
-        return { ...cycle, accessoryPlan: { ...cycle.accessoryPlan, [slot]: items } }
-      })
+      const settings = get().profile?.settings
+      if (!settings) return
+      // Applies to the rest of the cycle, not just cycles not yet started.
+      mutateCycle((cycle) => applyAccessoryPlan(cycle, slot, items, settings))
     },
 
     saveCustomTemplate(template) {

@@ -376,3 +376,42 @@ export function resolveSwapWeightKg(args: {
   if (convertedKg !== null) return convertedKg
   return getExercise(toExerciseId, custom).equipment === 'bodyweight' ? null : currentKg
 }
+
+/** True when nothing has been recorded against an accessory yet. */
+const untouched = (logged: LoggedAccessory) =>
+  !logged.skipped && logged.sets.every((set) => !set.done && set.reps === null)
+
+/**
+ * Push an edited accessory plan into the running cycle.
+ *
+ * Days already logged keep exactly what was done — their accessory rows are
+ * materialised, so history is never rewritten. Days still to come pick the
+ * change up, including a different exercise, as long as nothing has been
+ * recorded against that row yet; a row you have already started is left alone
+ * rather than swapped out from under you.
+ */
+export function applyAccessoryPlan(
+  cycle: Cycle,
+  slot: DaySlot,
+  items: PlannedAccessory[],
+  settings: Settings,
+): Cycle {
+  const withPlan: Cycle = {
+    ...cycle,
+    accessoryPlan: { ...cycle.accessoryPlan, [slot]: items },
+    updatedAt: new Date().toISOString(),
+  }
+
+  const sessions: Record<string, Session> = { ...withPlan.sessions }
+  for (const [key, session] of Object.entries(withPlan.sessions)) {
+    if (session.slot !== slot) continue
+    if (session.status === 'complete' || session.status === 'skipped') continue
+    if (session.mainSets.length === 0) continue // Never opened; hydrates fresh anyway.
+    sessions[key] = hydrateSession(
+      withPlan,
+      { ...session, accessories: session.accessories.filter((a) => !untouched(a)) },
+      settings,
+    )
+  }
+  return { ...withPlan, sessions }
+}

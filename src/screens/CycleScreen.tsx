@@ -6,6 +6,7 @@ import { getExercise } from '../lib/exercises'
 import { cycleToText, shareText, weekToText } from '../lib/share'
 import { DAY_SLOTS, WEEK_NUMBERS, type Cycle, type Session, type Settings, type WeekNumber } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
+import { CycleReportView } from './CycleReport'
 
 const STATUS_STYLE: Record<Session['status'], string> = {
   pending: 'border-ink-700 bg-ink-800/40 text-ink-300',
@@ -167,6 +168,7 @@ export function CycleScreen() {
   const [week, setWeek] = useState<WeekNumber>(1)
   const [printing, setPrinting] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [showingReport, setShowingReport] = useState(false)
 
   if (!cycle || !profile) {
     return (
@@ -189,6 +191,10 @@ export function CycleScreen() {
     if (result === 'copied') toast.show(`${label} copied to clipboard`)
     if (result === 'failed') toast.show('Could not share — try again')
     setSharing(false)
+  }
+
+  if (showingReport) {
+    return <CycleReportView cycle={cycle} profile={profile} onClose={() => setShowingReport(false)} />
   }
 
   if (printing) {
@@ -275,9 +281,14 @@ export function CycleScreen() {
 
       <SectionTitle
         action={
-          <Button size="sm" variant="quiet" onClick={() => setPrinting(true)}>
-            Print view
-          </Button>
+          <div className="flex gap-1">
+            <Button size="sm" variant="quiet" onClick={() => setShowingReport(true)}>
+              Report
+            </Button>
+            <Button size="sm" variant="quiet" onClick={() => setPrinting(true)}>
+              Print view
+            </Button>
+          </div>
         }
       >
         Week {week} detail
@@ -295,8 +306,11 @@ export function CycleScreen() {
         <Card className="mt-5 border-brand-600/50 bg-brand-500/10 p-4 text-center">
           <p className="font-semibold text-brand-400">Cycle complete.</p>
           <p className="mt-1 text-sm text-ink-300">
-            Head to Lifts to review your rep records and set next cycle's training maxes.
+            See how it went, then head to Lifts to set next cycle's training maxes.
           </p>
+          <Button variant="primary" className="mt-3 w-full" onClick={() => setShowingReport(true)}>
+            View cycle report
+          </Button>
         </Card>
       ) : null}
 

@@ -34,6 +34,9 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   you're actually loading, with per-implement increments and a plate calculator.
 - **Planning and sharing.** The whole four-week cycle on one screen, a print view
   for PDF or the fridge, and one-tap text export of a day, a week or a cycle.
+- **A report at the end of every cycle.** Days trained, total load, sets and
+  reps, each lift's rep record, a per-exercise table and a split of where the
+  work actually went by muscle group. Shareable as text or printable.
 - **End of cycle.** Reviews every rep record, estimates a new 1RM, and offers
   both Wendler's flat increment and the AMRAP-derived training max per lift —
   including a reset to 90% when you missed reps.

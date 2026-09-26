@@ -304,3 +304,16 @@ export function progressAccessories(
 
   return { plan: next, bumps }
 }
+
+/**
+ * The single number to beat, for the cramped placeholder in a set row.
+ * "10-12" reads as "12": the top of the range is the goal, and the full range
+ * is already on the card header above. A range does not fit in the field and
+ * was being clipped to "10-1", which looks like a target of one rep.
+ */
+export function repGoal(targetReps: string): string {
+  const range = parseRepRange(targetReps)
+  if (range.amrap) return 'max'
+  if (!Number.isFinite(range.max)) return targetReps.trim()
+  return String(range.max)
+}
