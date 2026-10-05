@@ -17,7 +17,7 @@ import {
   substituteTrainingMaxKg,
   today,
 } from '../lib/cycle'
-import { progressAccessories, type AccessoryBump } from '../lib/progression'
+import { proposeAccessoryChanges, type AccessoryBump } from '../lib/progression'
 import { createProfile, DEFAULT_SETTINGS, type SeedKind } from '../lib/defaults'
 import { getExercise } from '../lib/exercises'
 import { findTemplate } from '../lib/templates'
@@ -552,11 +552,11 @@ export const useApp = create<AppState>((set, get) => {
        * shoulder is complaining, so the decision stays with the lifter.
        */
       const proposed = profile.settings.autoProgressAccessories
-        ? progressAccessories(
+        ? proposeAccessoryChanges(
             cycle.accessoryPlan[session.slot] ?? [],
             session.accessories,
             contextFor(profile.settings),
-          ).bumps
+          )
         : []
 
       set({

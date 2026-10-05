@@ -9,7 +9,7 @@ import {
   resolveSwapWeightKg,
 } from './cycle'
 import { DEFAULT_SETTINGS, createProfile } from './defaults'
-import { progressAccessories, parseRepRange } from './progression'
+import { proposeAccessoryChanges, parseRepRange } from './progression'
 import { findTemplate } from './templates'
 import type { Lift, LoggedAccessory, PlannedAccessory } from './types'
 import { fromKg, lbToKg, roundTo } from './units'
@@ -34,16 +34,33 @@ const plan = (over: Partial<PlannedAccessory> = {}): PlannedAccessory => ({
   ...over,
 })
 
-const logged = (reps: (number | null)[], over: Partial<LoggedAccessory> = {}): LoggedAccessory => ({
-  planId: 'p1',
-  exerciseId: 'incline-db-bench',
-  targetReps: '10-12',
-  targetWeightKg: lbToKg(45),
-  sets: reps.map((r) => ({ done: r !== null, weightKg: lbToKg(45), reps: r })),
-  notes: '',
-  skipped: false,
-  ...over,
-})
+const logged = (
+  reps: (number | null)[],
+  over: Partial<LoggedAccessory> & { weightKg?: number | null; weightLb?: number } = {},
+): LoggedAccessory => {
+  const { weightKg, weightLb, ...rest } = over
+  const setWeight =
+    weightKg !== undefined ? weightKg : weightLb === undefined ? lbToKg(45) : lbToKg(weightLb)
+  return {
+    planId: 'p1',
+    exerciseId: 'incline-db-bench',
+    targetReps: '10-12',
+    targetWeightKg: setWeight,
+    sets: reps.map((r) => ({ done: r !== null, weightKg: setWeight, reps: r })),
+    notes: '',
+    skipped: false,
+    ...rest,
+  }
+}
+
+/** Metric context, for the examples given in kilograms. */
+const KG: EquipmentContext = {
+  unit: 'kg',
+  barbellIncrement: 2.5,
+  dumbbellIncrement: 2,
+  machineIncrement: 2.5,
+  maxDumbbell: null,
+}
 
 const inLb = (kg: number) => roundTo(fromKg(kg, 'lb'), 0.5)
 
@@ -60,68 +77,54 @@ const SHEET_LIFTS: Lift[] = [
 ]
 
 
-describe('accessory auto-progression', () => {
-  it('adds weight when every set clears the top of the range', () => {
-    const { plan: next, bumps } = progressAccessories([plan()], [logged([12, 12, 12])], LB)
-    expect(bumps).toHaveLength(1)
-    expect(inLb(bumps[0].toKg)).toBe(50)
-    expect(inLb(next[0].targetWeightKg as number)).toBe(50)
+describe('proposals: clearing the rep range', () => {
+  it('offers one increment when every set clears the top of the range', () => {
+    const [proposal] = proposeAccessoryChanges([plan()], [logged([12, 12, 12])], LB)
+    expect(proposal.kind).toBe('cleared-range')
+    expect(inLb(proposal.toKg)).toBe(50)
   })
 
-  it('holds when one set falls short', () => {
-    const { bumps } = progressAccessories([plan()], [logged([12, 12, 11])], LB)
-    expect(bumps).toEqual([])
+  it('offers nothing when one set falls short', () => {
+    expect(proposeAccessoryChanges([plan()], [logged([12, 12, 11])], LB)).toEqual([])
   })
 
-  it('holds when a set was never done', () => {
-    const { bumps } = progressAccessories([plan()], [logged([12, 12, null])], LB)
-    expect(bumps).toEqual([])
+  it('offers nothing when a set was never done', () => {
+    expect(proposeAccessoryChanges([plan()], [logged([12, 12, null])], LB)).toEqual([])
   })
 
-  it('holds when fewer sets were logged than planned', () => {
-    const { bumps } = progressAccessories([plan({ sets: 4 })], [logged([12, 12, 12])], LB)
-    expect(bumps).toEqual([])
+  it('offers nothing when fewer sets were logged than planned', () => {
+    expect(proposeAccessoryChanges([plan({ sets: 4 })], [logged([12, 12, 12])], LB)).toEqual([])
   })
 
   it('treats a single rep target as its own ceiling', () => {
-    const { bumps } = progressAccessories(
+    const [proposal] = proposeAccessoryChanges(
       [plan({ targetReps: '10' })],
       [logged([10, 10, 10], { targetReps: '10' })],
       LB,
     )
-    expect(inLb(bumps[0].toKg)).toBe(50)
+    expect(inLb(proposal.toKg)).toBe(50)
   })
 
   it('leaves AMRAP work alone — there the goal is reps', () => {
-    const { bumps } = progressAccessories(
+    const proposals = proposeAccessoryChanges(
       [plan({ targetReps: 'AMRAP', exerciseId: 'chin-up', targetWeightKg: null })],
-      [logged([20, 18, 15], { targetReps: 'AMRAP', exerciseId: 'chin-up' })],
+      [logged([20, 18, 15], { targetReps: 'AMRAP', exerciseId: 'chin-up', weightKg: null })],
       LB,
     )
-    expect(bumps).toEqual([])
-  })
-
-  it('leaves bodyweight work alone', () => {
-    const { bumps } = progressAccessories(
-      [plan({ exerciseId: 'ab-wheel', targetWeightKg: null })],
-      [logged([12, 12, 12], { exerciseId: 'ab-wheel' })],
-      LB,
-    )
-    expect(bumps).toEqual([])
+    expect(proposals).toEqual([])
   })
 
   it('skips an accessory that was skipped', () => {
-    const { bumps } = progressAccessories([plan()], [logged([12, 12, 12], { skipped: true })], LB)
-    expect(bumps).toEqual([])
+    expect(proposeAccessoryChanges([plan()], [logged([12, 12, 12], { skipped: true })], LB)).toEqual([])
   })
 
   it('uses the machine increment for a machine exercise', () => {
-    const { bumps } = progressAccessories(
+    const [proposal] = proposeAccessoryChanges(
       [plan({ exerciseId: 'leg-press', targetWeightKg: lbToKg(255), targetReps: '12' })],
-      [logged([12, 12, 12], { exerciseId: 'leg-press', targetReps: '12' })],
+      [logged([12, 12, 12], { exerciseId: 'leg-press', targetReps: '12', weightLb: 255 })],
       LB,
     )
-    expect(inLb(bumps[0].toKg)).toBe(260)
+    expect(inLb(proposal.toKg)).toBe(260)
   })
 
   it('reads the rep ranges the spreadsheet used', () => {
@@ -129,6 +132,79 @@ describe('accessory auto-progression', () => {
     expect(parseRepRange('8/leg')).toMatchObject({ min: 8, max: 8 })
     expect(parseRepRange('AMRAP').amrap).toBe(true)
     expect(parseRepRange('15')).toMatchObject({ min: 15, max: 15 })
+  })
+})
+
+describe('proposals: matching the weight actually lifted', () => {
+  it('offers to come down when the session was lighter than planned', () => {
+    // Planned 30 kg, worked at 24.
+    const item = plan({ targetWeightKg: 30 })
+    const [proposal] = proposeAccessoryChanges([item], [logged([10, 10, 10], { weightKg: 24 })], KG)
+    expect(proposal.kind).toBe('matches-logged')
+    expect(proposal.toKg).toBe(24)
+    expect(proposal.reason).toContain('24')
+  })
+
+  it('offers to go up when the session was heavier than planned', () => {
+    const item = plan({ targetWeightKg: 9 })
+    const [proposal] = proposeAccessoryChanges([item], [logged([10, 10, 10], { weightKg: 17 })], KG)
+    expect(proposal.kind).toBe('matches-logged')
+    expect(proposal.toKg).toBe(17)
+  })
+
+  it('offers nothing when the session matched the plan', () => {
+    const item = plan({ targetWeightKg: 30, targetReps: '10-12' })
+    expect(proposeAccessoryChanges([item], [logged([10, 10, 10], { weightKg: 30 })], KG)).toEqual([])
+  })
+
+  it('takes the weight worked at, not a warm-up', () => {
+    const item = plan({ targetWeightKg: 30 })
+    const entry = logged([10, 10, 10], { weightKg: 24 })
+    entry.sets[0].weightKg = 20 // one lighter set first
+    const [proposal] = proposeAccessoryChanges([item], [entry], KG)
+    expect(proposal.toKg).toBe(24)
+  })
+
+  it('breaks a tie toward the weight finished on', () => {
+    const item = plan({ targetWeightKg: 30, sets: 2 })
+    const entry = logged([10, 10], { weightKg: 20 })
+    entry.sets[1].weightKg = 25
+    const [proposal] = proposeAccessoryChanges([item], [entry], KG)
+    expect(proposal.toKg).toBe(25)
+  })
+
+  it('wins over the rep-range rule, so a drop is not then increased', () => {
+    // Cleared 12 reps on every set, but at 24 kg rather than the planned 30.
+    const item = plan({ targetWeightKg: 30, targetReps: '10-12' })
+    const [proposal] = proposeAccessoryChanges([item], [logged([12, 12, 12], { weightKg: 24 })], KG)
+    expect(proposal.kind).toBe('matches-logged')
+    expect(proposal.toKg).toBe(24)
+  })
+
+  it('offers a weight where the plan said bodyweight', () => {
+    const item = plan({ exerciseId: 'ab-wheel', targetWeightKg: null })
+    const [proposal] = proposeAccessoryChanges(
+      [item],
+      [logged([10, 10, 10], { exerciseId: 'ab-wheel', weightKg: 10 })],
+      KG,
+    )
+    expect(proposal.fromKg).toBeNull()
+    expect(proposal.toKg).toBe(10)
+    expect(proposal.reason).toContain('bodyweight')
+  })
+
+  it('does not read a blank weight as a decision to go bodyweight', () => {
+    const item = plan({ targetWeightKg: 30, targetReps: '10-12' })
+    const entry = logged([10, 10, 10], { weightKg: 30 })
+    for (const set of entry.sets) set.weightKg = null
+    expect(proposeAccessoryChanges([item], [entry], KG)).toEqual([])
+  })
+
+  it('ignores differences too small to load', () => {
+    // 30.4 kg rounds to the same 30 on a 2.5 kg barbell step.
+    const item = plan({ exerciseId: 'barbell-row', targetWeightKg: 30 })
+    const entry = logged([10, 10, 10], { exerciseId: 'barbell-row', weightKg: 30.4 })
+    expect(proposeAccessoryChanges([item], [entry], KG)).toEqual([])
   })
 })
 

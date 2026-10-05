@@ -5,6 +5,7 @@ import type {
   CycleLift,
   DaySlot,
   LoggedAccessory,
+  LoggedAccessorySet,
   LoggedSet,
   PlannedAccessory,
   Session,
@@ -252,57 +253,161 @@ export function personalBest(cycles: Cycle[], exerciseId: string): { weightKg: n
 
 // ── Automatic accessory progression ────────────────────────────────────────
 
+export type AccessoryChangeKind = 'cleared-range' | 'matches-logged'
+
 export interface AccessoryBump {
   planId: string
   exerciseId: string
-  fromKg: number
+  /** Null when the plan called for bodyweight. */
+  fromKg: number | null
   toKg: number
+  kind: AccessoryChangeKind
+  /** One line saying why this is being offered. */
+  reason: string
   /** Display increment, for the message shown after a workout. */
   stepInUnit: number
 }
 
 /**
- * Earn weight by clearing the range. When every set of an accessory hits the
- * top of its rep target, the plan's target weight goes up one increment for
- * next time — which is the rule people apply by hand and forget to.
+ * The weight an accessory was actually worked at.
  *
- * Bodyweight and AMRAP entries are left alone: there is no weight to add, and
- * the goal there is beating the rep count.
+ * The most common weight across the sets you completed, with ties going to the
+ * one you finished on — so warming up at 20 and then doing 24, 24, 24 reads as
+ * 24, not as an average of the two.
  */
-export function progressAccessories(
+export function workingWeightKg(sets: LoggedAccessorySet[]): number | null {
+  const done = sets.filter((set) => set.done && set.weightKg !== null && (set.reps ?? 0) > 0)
+  if (done.length === 0) return null
+
+  const tally = new Map<number, { count: number; last: number }>()
+  done.forEach((set, index) => {
+    const kg = set.weightKg as number
+    const current = tally.get(kg) ?? { count: 0, last: -1 }
+    tally.set(kg, { count: current.count + 1, last: index })
+  })
+
+  let best: { kg: number; count: number; last: number } | null = null
+  for (const [kg, value] of tally) {
+    const better =
+      !best || value.count > best.count || (value.count === best.count && value.last > best.last)
+    if (better) best = { kg, count: value.count, last: value.last }
+  }
+  return best?.kg ?? null
+}
+
+/**
+ * Make the plan match what was actually lifted, in either direction.
+ *
+ * Separate from the rep-range rule on purpose: dropping from 30 to 24 because 30
+ * was too much is information about the right working weight, and so is jumping
+ * from 9 to 17 because 9 was nothing. Neither has anything to do with clearing a
+ * rep range, and both otherwise have to be re-entered every single session.
+ */
+function matchLoggedProposal(
+  item: PlannedAccessory,
+  entry: LoggedAccessory,
+  ctx: EquipmentContext,
+): AccessoryBump | null {
+  const actualKg = workingWeightKg(entry.sets)
+  /*
+   * A blank weight is not evidence of a bodyweight set — far more often it just
+   * was not filled in — so only an explicit number proposes a change. Going the
+   * other way, bodyweight in the plan and a number logged, is explicit and does.
+   */
+  if (actualKg === null) return null
+
+  const increment = incrementFor(getExercise(item.exerciseId).equipment, ctx)
+  /*
+   * Compare at the implement's step so a conversion artefact — 30 kg against a
+   * logged 30.4 — is not read as a decision. Report the numbers unrounded
+   * though, because those are what the lifter typed and what the editable field
+   * below the sentence shows; snapping only one of the two made the sheet say
+   * "17.5" above a box containing 17.
+   */
+  const atStep = (kg: number | null) => (kg === null ? null : roundTo(fromKg(kg, ctx.unit), increment))
+  if (atStep(item.targetWeightKg) === atStep(actualKg)) return null
+
+  const shown = (kg: number) => Math.round(fromKg(kg, ctx.unit) * 10) / 10
+  const actual = shown(actualKg)
+
+  return {
+    planId: item.id,
+    exerciseId: item.exerciseId,
+    fromKg: item.targetWeightKg,
+    toKg: actualKg,
+    kind: 'matches-logged',
+    reason:
+      item.targetWeightKg === null
+        ? `You used ${actual} ${ctx.unit} where the plan said bodyweight.`
+        : `You worked at ${actual} ${ctx.unit}, not the planned ${shown(item.targetWeightKg)}.`,
+    stepInUnit: increment,
+  }
+}
+
+/**
+ * Earn weight by clearing the range. When every set of an accessory hits the top
+ * of its rep target, the target weight goes up one increment for next time —
+ * the rule people apply by hand and forget to.
+ */
+function clearedRangeProposal(
+  item: PlannedAccessory,
+  entry: LoggedAccessory,
+  ctx: EquipmentContext,
+): AccessoryBump | null {
+  if (item.targetWeightKg === null) return null
+
+  const range = parseRepRange(item.targetReps)
+  if (range.amrap || !Number.isFinite(range.max)) return null
+
+  const done = entry.sets.filter((set) => set.done && set.reps !== null)
+  // Every planned set has to be there; three good sets out of four is not a
+  // completed prescription.
+  if (done.length < item.sets) return null
+  if (!done.every((set) => (set.reps as number) >= range.max)) return null
+
+  const increment = incrementFor(getExercise(item.exerciseId).equipment, ctx)
+  const nextKg = toKg(roundTo(fromKg(item.targetWeightKg, ctx.unit) + increment, increment), ctx.unit)
+  return {
+    planId: item.id,
+    exerciseId: item.exerciseId,
+    fromKg: item.targetWeightKg,
+    toKg: nextKg,
+    kind: 'cleared-range',
+    reason: `You cleared ${range.max} reps on every set.`,
+    stepInUnit: increment,
+  }
+}
+
+/**
+ * Everything worth offering to change after a workout, at most one per exercise.
+ */
+export function proposeAccessoryChanges(
   plan: PlannedAccessory[],
   logged: LoggedAccessory[],
   ctx: EquipmentContext,
-): { plan: PlannedAccessory[]; bumps: AccessoryBump[] } {
-  const bumps: AccessoryBump[] = []
+): AccessoryBump[] {
   const byPlanId = new Map(logged.map((entry) => [entry.planId, entry]))
+  const proposals: AccessoryBump[] = []
 
-  const next = plan.map((item) => {
+  for (const item of plan) {
     const entry = byPlanId.get(item.id)
-    if (!entry || entry.skipped || item.targetWeightKg === null) return item
+    if (!entry || entry.skipped) continue
 
-    const range = parseRepRange(item.targetReps)
-    if (range.amrap || !Number.isFinite(range.max)) return item
+    /*
+     * Matching what was lifted wins. Adding an increment to a weight you did not
+     * use would compound the mismatch rather than correct it — clearing the
+     * range at 24 when the plan said 30 argues for 24, not for 32.
+     */
+    const matched = matchLoggedProposal(item, entry, ctx)
+    if (matched) {
+      proposals.push(matched)
+      continue
+    }
+    const cleared = clearedRangeProposal(item, entry, ctx)
+    if (cleared) proposals.push(cleared)
+  }
 
-    const done = entry.sets.filter((set) => set.done && set.reps !== null)
-    // Every planned set has to be there; three good sets out of four is not a
-    // completed prescription.
-    if (done.length < item.sets) return item
-    if (!done.every((set) => (set.reps as number) >= range.max)) return item
-
-    const increment = incrementFor(getExercise(item.exerciseId).equipment, ctx)
-    const nextKg = toKg(roundTo(fromKg(item.targetWeightKg, ctx.unit) + increment, increment), ctx.unit)
-    bumps.push({
-      planId: item.id,
-      exerciseId: item.exerciseId,
-      fromKg: item.targetWeightKg,
-      toKg: nextKg,
-      stepInUnit: increment,
-    })
-    return { ...item, targetWeightKg: nextKg }
-  })
-
-  return { plan: next, bumps }
+  return proposals
 }
 
 /**

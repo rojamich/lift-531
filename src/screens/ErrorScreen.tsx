@@ -74,18 +74,18 @@ export function SaveErrorBanner() {
 }
 
 /**
- * Increases proposed by the workout just finished.
+ * Changes proposed by the workout just finished — either because a rep range was
+ * cleared, or because the weight actually lifted differed from the plan.
  *
  * Deliberately a decision rather than an announcement: each row can be accepted
- * or left alone, and the new weight itself is editable, because clearing a rep
- * range is evidence for adding weight rather than proof of it.
+ * or left alone, and the new weight itself is editable.
  */
 export function ProgressionSheet() {
   const bumps = useApp((s) => s.pendingBumps)
   const dismissBumps = useApp((s) => s.dismissBumps)
 
   return (
-    <Sheet open={bumps !== null} onClose={dismissBumps} title="Add weight next time?">
+    <Sheet open={bumps !== null} onClose={dismissBumps} title="Update next time's weights?">
       {/* Choices live in a child so they mount fresh with each proposal, rather
           than needing an effect to clear the previous workout's answers. */}
       {bumps ? <BumpChoices bumps={bumps} /> : null}
@@ -116,20 +116,27 @@ function BumpChoices({ bumps }: { bumps: AccessoryBump[] }) {
   return (
     <>
       <p className="text-sm text-ink-300">
-        You cleared the top of the rep range on every set of these. Take the increase, adjust it, or leave any
-        of them where they are.
+        These came out different from the plan. Take the change, adjust it, or leave any of them as they are.
       </p>
 
       <ul className="mt-3 space-y-1.5">
         {bumps.map((bump) => {
           const isDeclined = declined.has(bump.planId)
           const value = edited[bump.planId] ?? bump.toKg
+          // A drop is a correction, not progress, so it should not wear the
+          // same colour as earning weight.
+          const lighter = bump.fromKg !== null && bump.toKg < bump.fromKg
+          const accent = lighter ? 'flame' : 'brand'
           return (
             <li
               key={bump.planId}
               className={cx(
                 'rounded-xl border px-3 py-2.5 transition',
-                isDeclined ? 'border-ink-700 bg-ink-800/40' : 'border-brand-600/40 bg-brand-500/10',
+                isDeclined
+                  ? 'border-ink-700 bg-ink-800/40'
+                  : lighter
+                    ? 'border-flame-500/40 bg-flame-500/10'
+                    : 'border-brand-600/40 bg-brand-500/10',
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -143,21 +150,25 @@ function BumpChoices({ bumps }: { bumps: AccessoryBump[] }) {
                     'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
                     isDeclined
                       ? 'border-ink-600 text-ink-400'
-                      : 'border-brand-500 bg-brand-500/20 text-brand-400',
+                      : lighter
+                        ? 'border-flame-500 bg-flame-500/20 text-flame-400'
+                        : 'border-brand-500 bg-brand-500/20 text-brand-400',
                   )}
                 >
-                  {isDeclined ? 'Keeping' : 'Adding'}
+                  {isDeclined ? 'Keeping' : lighter ? 'Lowering' : 'Updating'}
                 </button>
               </div>
 
+              <p className="mt-0.5 text-xs text-ink-400">{bump.reason}</p>
+
               <div className="mt-1.5 flex items-center gap-2 text-sm">
                 <span className="tabular text-ink-400">
-                  {weight.textFor(bump.fromKg, getExercise(bump.exerciseId).equipment)}
+                  {bump.fromKg === null ? 'bodyweight' : weight.text(bump.fromKg)}
                 </span>
                 <span className="text-ink-400">&rarr;</span>
                 {isDeclined ? (
                   <span className="tabular font-semibold text-ink-400">
-                    {weight.fullFor(bump.fromKg, getExercise(bump.exerciseId).equipment)}{' '}
+                    {bump.fromKg === null ? 'bodyweight' : weight.full(bump.fromKg)}{' '}
                     <span className="font-normal">(no change)</span>
                   </span>
                 ) : (
@@ -172,7 +183,12 @@ function BumpChoices({ bumps }: { bumps: AccessoryBump[] }) {
                           [bump.planId]: weight.toKg(next ?? 0),
                         }))
                       }
-                      className="tabular w-[7ch] rounded-lg border border-brand-600/50 bg-ink-900 px-2 py-1 text-right font-bold text-brand-400 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25"
+                      className={cx(
+                        'tabular w-[7ch] rounded-lg border bg-ink-900 px-2 py-1 text-right font-bold outline-none focus:ring-2',
+                        accent === 'flame'
+                          ? 'border-flame-500/50 text-flame-400 focus:border-flame-500 focus:ring-flame-500/25'
+                          : 'border-brand-600/50 text-brand-400 focus:border-brand-500 focus:ring-brand-500/25',
+                      )}
                     />
                     <span className="text-xs text-ink-400">{weight.unit}</span>
                   </>
@@ -193,7 +209,7 @@ function BumpChoices({ bumps }: { bumps: AccessoryBump[] }) {
         >
           {accepted.length === 0
             ? 'Nothing selected'
-            : `Add weight to ${accepted.length} ${accepted.length === 1 ? 'exercise' : 'exercises'}`}
+            : `Update ${accepted.length} ${accepted.length === 1 ? 'exercise' : 'exercises'}`}
         </Button>
         <Button size="lg" className="w-full" onClick={dismissBumps}>
           Keep everything where it is
