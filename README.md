@@ -36,6 +36,9 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   you're actually loading, with per-implement increments and a plate calculator.
 - **Planning and sharing.** The whole four-week cycle on one screen, a print view
   for PDF or the fridge, and one-tap text export of a day, a week or a cycle.
+  A share reports what was actually lifted wherever it was logged and the plan
+  for anything still ahead, so a finished day goes out as a record and an
+  upcoming one as a plan.
 - **A report at the end of every cycle.** Days trained, total load, sets and
   reps, each lift's rep record, a per-exercise table and a split of where the
   work actually went by muscle group. Shareable as text or printable.

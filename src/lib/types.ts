@@ -148,6 +148,21 @@ export interface PlannedAccessory {
 
 export type SetKind = 'warmup' | 'main' | 'supplemental'
 
+/**
+ * The part of a prescribed set that rendering cares about. Declared here rather
+ * than importing PrescribedSet so lib/share stays independent of the engine's
+ * internals.
+ */
+export interface PrescribedSetLike {
+  id: string
+  label: string
+  weight: number | null
+  reps: number
+  amrap: boolean
+  capped: boolean
+  perHand: boolean
+}
+
 export interface LoggedSet {
   id: string
   kind: SetKind
