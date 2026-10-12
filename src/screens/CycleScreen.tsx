@@ -4,6 +4,7 @@ import { Button, Card, Empty, Pill, SectionTitle, Sheet, Toast, cx } from '../co
 import {
   cycleProgress,
   cycleSlots,
+  dayLabel,
   isCycleComplete,
   liftsFor,
   prescriptionsFor,
@@ -80,7 +81,7 @@ function WeekDetail({ cycle, week, settings }: { cycle: Cycle; week: WeekNumber;
         return (
           <Card key={slot} className="print-page p-3">
             <h4 className="font-semibold">
-              <span className="text-ink-400">Day {slot} · </span>
+              <span className="text-ink-400">{dayLabel(cycle, slot)} · </span>
               {blocks.map((block) => block.lift?.label ?? block.exercise.name).join(' + ')}
             </h4>
 

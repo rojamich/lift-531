@@ -251,6 +251,11 @@ export interface Cycle {
   template: Template
   lifts: CycleLift[]
   accessoryPlan: Record<DaySlot, PlannedAccessory[]>
+  /**
+   * What each day is called beyond its letter — "Push", "Pull", "Legs". Set by
+   * a named layout; absent when the days are just days.
+   */
+  dayNames?: Partial<Record<DaySlot, string>>
   sessions: Record<string, Session>
   createdAt: string
   updatedAt: string
@@ -264,6 +269,10 @@ export interface Profile {
   settings: Settings
   lifts: Lift[]
   accessoryPlan: Record<DaySlot, PlannedAccessory[]>
+  /** Day names carried into the next cycle. See `Cycle.dayNames`. */
+  dayNames?: Partial<Record<DaySlot, string>>
+  /** The named layout these days came from, if any. */
+  layoutId?: string
   customTemplates: Template[]
   customExercises: Exercise[]
   activeCycleId: string | null

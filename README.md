@@ -21,6 +21,14 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   record and equipment swap. Training all four lifts *less often* needs no
   setting at all: a cycle is sixteen sessions in whatever order you reach them,
   so twice a week just makes a cycle take eight weeks.
+- **Named layouts.** Push / Pull / Legs, Push / Pull, or a four-day Push / Pull.
+  A layout only decides which day each main lift lands on — by movement pattern,
+  so a front squat follows the squat and a sumo pull the hinge — and what
+  accessory work sits beside it. Your exercises, estimated maxes and training
+  maxes come through untouched, and an accessory weight you have already worked
+  up to comes with it rather than resetting. Days then show their name: "Day A ·
+  Push" on the workout screen, the month grid, the share and the printout.
+  Applies to your next cycle; moving a lift by hand afterwards clears the names.
 - **Any 5/3/1 variant.** FSL 5×5, FSL AMRAP, SSL, BBB (flat or ramping), BBS,
   Widowmaker, 5's PRO, or main work only. Every week percentage, rep target,
   warm-up and supplemental setting is editable, and edits save as your own

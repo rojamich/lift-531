@@ -111,7 +111,7 @@ function DayBlock({ view, unit }: { view: SessionView; unit: string }) {
     <section className="print-page mb-3 break-inside-avoid border-t border-ink-700 pt-2">
       <h3 className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold">
         <span>
-          Day {view.slot} — {view.liftLabel}
+          {view.dayLabel} — {view.liftLabel}
         </span>
         {!combined && view.lifts[0].swappedTo ? (
           <span className="text-xs font-normal">as {view.lifts[0].swappedTo}</span>
@@ -174,7 +174,10 @@ export function CyclePrint({ cycle, profile }: { cycle: Cycle; profile: Profile 
         <p className="tabular mt-1 flex flex-wrap gap-x-3 text-xs">
           {cycle.lifts.map((lift) => (
             <span key={`${lift.slot}-${lift.exerciseId}`}>
-              <span className="text-ink-400">{lift.slot}</span>{' '}
+              <span className="text-ink-400">
+                {lift.slot}
+                {cycle.dayNames?.[lift.slot] ? ` ${cycle.dayNames[lift.slot]}` : ''}
+              </span>{' '}
               {lift.label ?? lift.exerciseId}{' '}
               <span className="font-semibold">{weight.full(lift.trainingMaxKg)}</span>
             </span>

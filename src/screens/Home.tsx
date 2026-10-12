@@ -5,6 +5,7 @@ import {
   cycleMaxDrift,
   cycleProgress,
   cycleSlots,
+  dayLabel,
   isCycleComplete,
   liftsFor,
   nextSession,
@@ -94,7 +95,7 @@ function UpNext({ cycle, session }: { cycle: Cycle; session: Session }) {
           {blocks.map((block) => block.lift?.label ?? block.exercise.name).join(' + ')}
         </h2>
         <p className="text-sm text-ink-300">
-          Week {session.week} · Day {session.slot} · {weekSpec.label}
+          Week {session.week} · {dayLabel(cycle, session.slot)} · {weekSpec.label}
         </p>
       </div>
 
@@ -247,7 +248,9 @@ export function HomeScreen() {
                     : 'border-ink-700 bg-ink-800/40',
               )}
             >
-              <div className="text-[10px] font-bold uppercase tracking-wide text-ink-400">Day {slot}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-ink-400">
+                {cycle.dayNames?.[slot] ?? `Day ${slot}`}
+              </div>
               <div className="truncate text-xs font-semibold">
                 {/* Room for two words for one lift, one word each when paired. */}
                 {names.length > 1

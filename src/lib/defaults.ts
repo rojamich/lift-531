@@ -37,7 +37,7 @@ export const DEFAULT_LIFTS: Lift[] = [
   { slot: 'D', exerciseId: 'back-squat', label: 'Back Squat', est1RMKg: lbToKg(200), category: 'lower' },
 ]
 
-interface AccessoryInput {
+export interface AccessoryInput {
   exerciseId: string
   sets: number
   reps: string
@@ -47,7 +47,7 @@ interface AccessoryInput {
   notes?: string
 }
 
-const acc = (input: AccessoryInput): PlannedAccessory => ({
+export const acc = (input: AccessoryInput): PlannedAccessory => ({
   id: newId(),
   exerciseId: input.exerciseId,
   sets: input.sets,

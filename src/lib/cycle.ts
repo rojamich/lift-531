@@ -79,6 +79,7 @@ export interface CreateCycleArgs {
   startDate?: string
   lifts: Lift[]
   accessoryPlan: Record<DaySlot, PlannedAccessory[]>
+  dayNames?: Partial<Record<DaySlot, string>>
   template: Template
   settings: Settings
   /**
@@ -128,6 +129,7 @@ export function createCycle(args: CreateCycleArgs): Cycle {
     template: cloneTemplate(args.template),
     lifts: cycleLifts,
     accessoryPlan: structuredClone(args.accessoryPlan),
+    ...(args.dayNames ? { dayNames: { ...args.dayNames } } : {}),
     sessions,
     createdAt: stamp,
     updatedAt: stamp,
@@ -359,7 +361,12 @@ export function nextCycleFrom(
   previous: Cycle,
   profile: Profile,
   trainingMaxesKg: Record<string, number>,
-  overrides: { template?: Template; accessoryPlan?: Record<DaySlot, PlannedAccessory[]>; startDate?: string } = {},
+  overrides: {
+    template?: Template
+    accessoryPlan?: Record<DaySlot, PlannedAccessory[]>
+    dayNames?: Partial<Record<DaySlot, string>>
+    startDate?: string
+  } = {},
 ): Cycle {
   const order = ordinals(previous.lifts)
   return createCycle({
@@ -376,6 +383,7 @@ export function nextCycleFrom(
         profile.settings.tmPercent,
     })),
     accessoryPlan: overrides.accessoryPlan ?? previous.accessoryPlan,
+    dayNames: overrides.dayNames ?? previous.dayNames,
     template: overrides.template ?? previous.template,
     settings: profile.settings,
     trainingMaxOverridesKg: trainingMaxesKg,
@@ -556,3 +564,9 @@ export function cycleSlots(cycle: Pick<Cycle, 'lifts'>): DaySlot[] {
 }
 
 export const cycleDayCount = (cycle: Pick<Cycle, 'lifts'>) => cycleSlots(cycle).length
+
+/** "Day C" on its own, or "Day C · Push" when a layout named it. */
+export function dayLabel(cycle: Pick<Cycle, 'dayNames'>, slot: DaySlot): string {
+  const name = cycle.dayNames?.[slot]
+  return name ? `Day ${slot} · ${name}` : `Day ${slot}`
+}

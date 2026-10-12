@@ -34,7 +34,7 @@ export function sessionToText(
   const lines: string[] = []
 
   if (options.heading !== false) {
-    lines.push(`${cycle.name} · Week ${view.week} · Day ${view.slot} — ${view.liftLabel}`)
+    lines.push(`${cycle.name} · Week ${view.week} · ${view.dayLabel} — ${view.liftLabel}`)
   }
   lines.push(`${view.weekLabel} · ${stateLabel(view)}`)
   lines.push('')
@@ -124,7 +124,8 @@ export function cycleToText(cycle: Cycle, settings: Settings): string {
     'Training maxes',
     ...cycle.lifts.map((lift) => {
       const ex = getExercise(lift.exerciseId)
-      return `  Day ${lift.slot}  ${pad(lift.label ?? ex.name, 22)} ${formatNumber(fromKg(lift.trainingMaxKg, settings.unit))} ${settings.unit}`
+      const day = cycle.dayNames?.[lift.slot]
+      return `  ${pad(day ? `${lift.slot} ${day}` : `Day ${lift.slot}`, 10)} ${pad(lift.label ?? ex.name, 22)} ${formatNumber(fromKg(lift.trainingMaxKg, settings.unit))} ${settings.unit}`
     }),
   ].join('\n')
 

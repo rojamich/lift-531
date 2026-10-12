@@ -3,7 +3,7 @@ import { ExerciseSwap } from '../components/ExerciseSwap'
 import { useToast, useWakeLock, useWeight } from '../components/hooks'
 import { RestTimerBar, useRestTimer, formatClock } from '../components/RestTimer'
 import { Button, Card, Empty, Input, SectionTitle, Sheet, Toast, cx } from '../components/ui'
-import { contextFor, liftsFor, prescriptionsFor } from '../lib/cycle'
+import { contextFor, dayLabel, liftsFor, prescriptionsFor } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
 import { findLastAccessory, repGoal, suggestAccessory } from '../lib/progression'
 import { sessionToText, shareText } from '../lib/share'
@@ -262,7 +262,7 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
 
   const share = async () => {
     const result = await shareText(
-      `${cycle.name} · Week ${session.week} Day ${session.slot}`,
+      `${cycle.name} · Week ${session.week} ${dayLabel(cycle, session.slot)}`,
       sessionToText(cycle, session, profile.settings),
     )
     if (result === 'copied') toast.show('Workout copied to clipboard')
@@ -288,7 +288,7 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
               </button>
               <span>·</span>
               <span>
-                Week {session.week} · Day {session.slot}
+                Week {session.week} · {dayLabel(cycle, session.slot)}
               </span>
             </div>
             {/* On a combined day each lift carries its own swap, so the day's

@@ -1,4 +1,4 @@
-import { contextFor, prescriptionsFor, setBelongsTo } from './cycle'
+import { contextFor, dayLabel, prescriptionsFor, setBelongsTo } from './cycle'
 import { incrementFor } from './engine'
 import { getExercise } from './exercises'
 import type { Cycle, Exercise, LoggedAccessory, LoggedSet, Session, Settings } from './types'
@@ -71,6 +71,8 @@ export interface LiftView {
 export interface SessionView {
   week: number
   slot: string
+  /** "Day C" or "Day C · Push", per the cycle's layout. */
+  dayLabel: string
   /** The day's lifts joined, e.g. "Press + Bench Press". */
   liftLabel: string
   weekLabel: string
@@ -219,6 +221,7 @@ export function buildSessionView(
   return {
     week: session.week,
     slot: session.slot,
+    dayLabel: dayLabel(cycle, session.slot),
     liftLabel: lifts.map((lift) => lift.label).join(' + '),
     weekLabel: weekSpec.label,
     state,

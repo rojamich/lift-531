@@ -6,6 +6,7 @@ import { contextFor, isCycleComplete } from '../lib/cycle'
 import { trainingMaxFromEstimate } from '../lib/engine'
 import { getExercise } from '../lib/exercises'
 import { dayOptions, liftDays, liftsForDayCount } from '../lib/defaults'
+import { applyLayout, LAYOUTS, type DayLayout } from '../lib/layouts'
 import { personalBest, reviewCycle, type LiftReview } from '../lib/progression'
 import type { Lift, LiftCategory } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
@@ -109,6 +110,87 @@ function LiftEditor({ lift, index }: { lift: Lift; index: number }) {
         }
       />
     </Card>
+  )
+}
+
+/** One named layout, with what it would do to this lifter's own week. */
+function LayoutRow({ layout }: { layout: DayLayout }) {
+  const profile = useApp((s) => s.profile)!
+  const applyDayLayout = useApp((s) => s.applyDayLayout)
+  const [confirming, setConfirming] = useState(false)
+  const active = profile.layoutId === layout.id
+
+  const preview = useMemo(
+    () => applyLayout(layout, profile.lifts, profile.accessoryPlan),
+    [layout, profile.lifts, profile.accessoryPlan],
+  )
+  const days = liftDays(preview.lifts)
+  const nameOf = (lift: Lift) => lift.label ?? getExercise(lift.exerciseId, profile.customExercises).name
+
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">
+            {layout.name}
+            {active ? <span className="ml-1.5 text-xs font-normal text-brand-400">in use</span> : null}
+          </div>
+          <div className="text-xs text-ink-400">{layout.summary}</div>
+        </div>
+        <Button size="sm" variant={active ? 'quiet' : 'ghost'} onClick={() => setConfirming(true)}>
+          {active ? 'Reapply' : 'Use'}
+        </Button>
+      </div>
+
+      <div className="mt-2 space-y-0.5">
+        {days.map((slot) => (
+          <div key={slot} className="flex gap-2 text-xs">
+            <span className="w-24 shrink-0 font-semibold uppercase tracking-[0.1em] text-ink-400">
+              {slot} · {preview.dayNames[slot]}
+            </span>
+            <span className="min-w-0 text-ink-300">
+              {preview.lifts.filter((lift) => lift.slot === slot).map(nameOf).join(' + ')}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <Sheet open={confirming} onClose={() => setConfirming(false)} title={layout.name}>
+        <p className="text-sm text-ink-300">{layout.summary}</p>
+        <div className="mt-3 space-y-2">
+          {days.map((slot) => (
+            <div key={slot} className="rounded-xl border border-ink-700 bg-ink-800/60 p-2.5">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-brand-400">
+                Day {slot} · {preview.dayNames[slot]}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold">
+                {preview.lifts.filter((lift) => lift.slot === slot).map(nameOf).join(' + ')}
+              </div>
+              <div className="mt-1 text-xs text-ink-400">
+                {preview.accessoryPlan[slot]
+                  .map((item) => getExercise(item.exerciseId, profile.customExercises).name)
+                  .join(' · ')}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-ink-400">
+          Replaces your day layout and accessory plan for the next cycle. The cycle you're running
+          keeps its own days and accessories, and nothing you've logged changes.
+        </p>
+        <Button
+          variant="primary"
+          size="lg"
+          className="mt-3 w-full"
+          onClick={() => {
+            applyDayLayout(layout.id)
+            setConfirming(false)
+          }}
+        >
+          Use {layout.name}
+        </Button>
+      </Sheet>
+    </div>
   )
 }
 
@@ -378,6 +460,19 @@ export function LiftsScreen() {
           take eight weeks.
         </p>
       </Card>
+
+      <SectionTitle>Layouts</SectionTitle>
+      <Card className="mb-5 divide-y divide-ink-700/60">
+        {LAYOUTS.map((layout) => (
+          <LayoutRow key={layout.id} layout={layout} />
+        ))}
+      </Card>
+      <p className="mb-5 mt-2 text-xs text-ink-400">
+        A layout only decides which day each lift lands on and what sits beside it — your exercises
+        and maxes come through untouched. Accessory weights you have already worked up to come with
+        them; anything new starts at a conservative number you can edit under Plan. Applies to your
+        next cycle, and moving a lift by hand afterwards clears the day names.
+      </p>
 
       <SectionTitle>Main lifts</SectionTitle>
       <div className="space-y-2.5">

@@ -20,6 +20,7 @@ import {
 import { proposeAccessoryChanges, type AccessoryBump } from '../lib/progression'
 import { createProfile, DEFAULT_SETTINGS, normalizeLiftDays, type SeedKind } from '../lib/defaults'
 import { getExercise } from '../lib/exercises'
+import { applyLayout, findLayout } from '../lib/layouts'
 import { findTemplate } from '../lib/templates'
 import { DAY_SLOTS } from '../lib/types'
 import type {
@@ -75,6 +76,8 @@ interface AppState {
   updateSettings: (patch: Partial<Settings>) => void
   updateProfile: (patch: Partial<Pick<Profile, 'displayName' | 'lifts' | 'accessoryPlan' | 'customTemplates'>>) => void
   setLifts: (lifts: Lift[]) => void
+  /** Rearrange the week into a named layout. Applies to the next cycle. */
+  applyDayLayout: (layoutId: string) => void
   setAccessoryPlan: (slot: DaySlot, items: PlannedAccessory[]) => void
   saveCustomTemplate: (template: Template) => void
 
@@ -387,7 +390,39 @@ export const useApp = create<AppState>((set, get) => {
     setLifts(lifts) {
       // Normalised here so no screen has to care: days stay contiguous and a
       // day's lifts stay grouped however they were moved around.
-      mutateProfile((profile) => ({ ...profile, lifts: normalizeLiftDays(lifts) }))
+      mutateProfile((profile) => {
+        const next = normalizeLiftDays(lifts)
+        /*
+         * Day names describe a layout. Once the days themselves are rearranged
+         * by hand they stop being true — a day called "Legs" holding the bench
+         * is worse than a day called nothing — so they go with the layout.
+         */
+        const moved =
+          next.length !== profile.lifts.length ||
+          next.some((lift, index) => lift.slot !== profile.lifts[index]?.slot)
+        if (!moved) return { ...profile, lifts: next }
+        const { dayNames: _names, layoutId: _layout, ...rest } = profile
+        return { ...rest, lifts: next }
+      })
+    },
+
+    applyDayLayout(layoutId) {
+      const profile = get().profile
+      const layout = findLayout(layoutId)
+      if (!profile || !layout) return
+      const applied = applyLayout(layout, profile.lifts, profile.accessoryPlan)
+      /*
+       * The running cycle is left alone — its days are frozen with its maxes,
+       * and rearranging a week someone is halfway through would strand whatever
+       * they have already logged.
+       */
+      mutateProfile((current) => ({
+        ...current,
+        lifts: normalizeLiftDays(applied.lifts),
+        accessoryPlan: applied.accessoryPlan,
+        dayNames: applied.dayNames,
+        layoutId: layout.id,
+      }))
     },
 
     setAccessoryPlan(slot, items) {
@@ -420,6 +455,7 @@ export const useApp = create<AppState>((set, get) => {
         startDate: options?.startDate ?? today(),
         lifts: profile.lifts,
         accessoryPlan: profile.accessoryPlan,
+        dayNames: profile.dayNames,
         template,
         settings: profile.settings,
       })
@@ -662,6 +698,7 @@ export const useApp = create<AppState>((set, get) => {
       const next = nextCycleFrom(closed, profile, trainingMaxesKg, {
         template: options?.template,
         accessoryPlan: options?.accessoryPlan,
+        dayNames: profile.dayNames,
       })
       // The new maxes become the profile's baseline for any cycle started later.
       const updatedProfile: Profile = {
