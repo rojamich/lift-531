@@ -26,7 +26,7 @@ const ACCESSORY: PlannedAccessory = {
   active: true,
 }
 
-const plan: Record<DaySlot, PlannedAccessory[]> = { A: [], B: [ACCESSORY], C: [], D: [] }
+const plan: Record<DaySlot, PlannedAccessory[]> = { A: [], B: [ACCESSORY], C: [], D: [], E: [], F: [] }
 
 const build = () =>
   createCycle({ number: 1, lifts: LIFTS, accessoryPlan: plan, template: findTemplate('fsl-5x5'), settings })

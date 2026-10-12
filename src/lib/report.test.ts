@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyAccessoryPlan, createCycle, hydrateSession } from './cycle'
-import { DEFAULT_SETTINGS } from './defaults'
+import { applyAccessoryPlan, createCycle, cycleSlots, hydrateSession, nextSession } from './cycle'
+import { DEFAULT_LIFTS, DEFAULT_SETTINGS, liftsForDayCount } from './defaults'
 import { repGoal } from './progression'
 import { buildCycleReport } from './report'
 import { findTemplate } from './templates'
@@ -32,6 +32,8 @@ const plan = (items: PlannedAccessory[]): Record<DaySlot, PlannedAccessory[]> =>
   B: items,
   C: [],
   D: [],
+  E: [],
+  F: [],
 })
 
 const build = (items: PlannedAccessory[] = [accessory({ id: 'p1' })]) =>
@@ -189,5 +191,57 @@ describe('report date range', () => {
     cycle = complete(cycle, 'w1B', 12, '2026-09-01T10:00:00.000Z')
     const report = buildCycleReport(cycle)
     expect(report.startDate <= (report.endDate as string)).toBe(true)
+  })
+})
+
+describe('cycles with fewer training days', () => {
+  const threeDay = () =>
+    createCycle({
+      number: 1,
+      lifts: LIFTS.slice(0, 3),
+      accessoryPlan: plan([accessory({ id: 'p1' })]),
+      template: findTemplate('fsl-5x5'),
+      settings,
+    })
+
+  it('builds four weeks of three days, not four', () => {
+    const cycle = threeDay()
+    expect(cycleSlots(cycle)).toEqual(['A', 'B', 'C'])
+    expect(Object.keys(cycle.sessions)).toHaveLength(12)
+    expect(cycle.sessions.w1D).toBeUndefined()
+  })
+
+  it('walks the shorter week when finding what is next', () => {
+    const cycle = threeDay()
+    expect(nextSession(cycle)?.key).toBe('w1A')
+    const done = Object.fromEntries(
+      Object.entries(cycle.sessions).map(([key, s]) => [
+        key,
+        s.slot === 'A' && s.week === 1 ? { ...s, status: 'complete' as const } : s,
+      ]),
+    )
+    expect(nextSession({ ...cycle, sessions: done })?.key).toBe('w1B')
+  })
+
+  it('reports against the days it actually has', () => {
+    const cycle = threeDay()
+    expect(buildCycleReport(cycle).sessionsTotal).toBe(12)
+    expect(buildCycleReport(cycle).lifts).toHaveLength(3)
+  })
+
+  it('trims the presses first when dropping to three days', () => {
+    const three = liftsForDayCount(3, DEFAULT_LIFTS)
+    expect(three).toHaveLength(3)
+    expect(three.map((l) => l.slot)).toEqual(['A', 'B', 'C'])
+    expect(three.map((l) => l.exerciseId)).not.toContain('ohp')
+  })
+
+  it('keeps squat and deadlift at two days', () => {
+    const two = liftsForDayCount(2, DEFAULT_LIFTS)
+    expect(two.map((l) => l.exerciseId).sort()).toEqual(['back-squat', 'deadlift'])
+  })
+
+  it('leaves four days exactly as they were', () => {
+    expect(liftsForDayCount(4, DEFAULT_LIFTS)).toEqual(DEFAULT_LIFTS)
   })
 })

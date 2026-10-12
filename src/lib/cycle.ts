@@ -48,11 +48,16 @@ export function contextFor(settings: Settings): EquipmentContext {
   }
 }
 
-/** Every session key in the order they're trained: w1A..w1D, w2A..w4D. */
-export function sessionOrder(): { week: WeekNumber; slot: DaySlot; key: string }[] {
-  return WEEK_NUMBERS.flatMap((week) =>
-    DAY_SLOTS.map((slot) => ({ week, slot, key: sessionKey(week, slot) })),
-  )
+/**
+ * Every session key in the order they're trained: w1A..w1C, w2A..w4C for a
+ * three-day cycle. Defaults to four days for callers without a cycle to hand.
+ */
+export function sessionOrder(slots: DaySlot[] = DAY_SLOTS.slice(0, 4)): {
+  week: WeekNumber
+  slot: DaySlot
+  key: string
+}[] {
+  return WEEK_NUMBERS.flatMap((week) => slots.map((slot) => ({ week, slot, key: sessionKey(week, slot) })))
 }
 
 function blankSession(week: WeekNumber, slot: DaySlot): Session {
@@ -91,7 +96,8 @@ export function createCycle(args: CreateCycleArgs): Cycle {
   }))
 
   const sessions: Record<string, Session> = {}
-  for (const { week, slot, key } of sessionOrder()) sessions[key] = blankSession(week, slot)
+  for (const { week, slot, key } of sessionOrder(cycleSlots({ lifts: cycleLifts })))
+    sessions[key] = blankSession(week, slot)
 
   return {
     id: newId(),
@@ -233,7 +239,9 @@ export function cycleProgress(cycle: Cycle): CycleProgress {
  * first session not yet done. Null once the cycle is finished.
  */
 export function nextSession(cycle: Cycle): Session | null {
-  const ordered = sessionOrder().map(({ key }) => cycle.sessions[key]).filter(Boolean)
+  const ordered = sessionOrder(cycleSlots(cycle))
+    .map(({ key }) => cycle.sessions[key])
+    .filter(Boolean)
   return (
     ordered.find((s) => s.status === 'in-progress') ??
     ordered.find((s) => s.status === 'pending') ??
@@ -415,3 +423,16 @@ export function applyAccessoryPlan(
   }
   return { ...withPlan, sessions }
 }
+
+/**
+ * The slots a cycle actually trains, in order.
+ *
+ * Derived from its main lifts rather than stored, so there is no day count to
+ * keep in sync with the lifts themselves: three lifts means a three-day cycle.
+ */
+export function cycleSlots(cycle: Pick<Cycle, 'lifts'>): DaySlot[] {
+  const present = new Set(cycle.lifts.map((lift) => lift.slot))
+  return DAY_SLOTS.filter((slot) => present.has(slot))
+}
+
+export const cycleDayCount = (cycle: Pick<Cycle, 'lifts'>) => cycleSlots(cycle).length

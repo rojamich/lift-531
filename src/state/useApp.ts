@@ -21,6 +21,7 @@ import { proposeAccessoryChanges, type AccessoryBump } from '../lib/progression'
 import { createProfile, DEFAULT_SETTINGS, type SeedKind } from '../lib/defaults'
 import { getExercise } from '../lib/exercises'
 import { findTemplate } from '../lib/templates'
+import { DAY_SLOTS } from '../lib/types'
 import type {
   Cycle,
   DaySlot,
@@ -205,6 +206,10 @@ export const useApp = create<AppState>((set, get) => {
     settings: { ...DEFAULT_SETTINGS, ...profile.settings },
     customTemplates: profile.customTemplates ?? [],
     customExercises: profile.customExercises ?? [],
+    // Profiles written before the day count became variable have no E or F.
+    accessoryPlan: Object.fromEntries(
+      DAY_SLOTS.map((slot) => [slot, profile.accessoryPlan?.[slot] ?? []]),
+    ) as Profile['accessoryPlan'],
   })
 
   const loadFor = async (user: AppUser) => {

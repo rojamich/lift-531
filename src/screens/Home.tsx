@@ -4,6 +4,7 @@ import { Button, Card, Empty, SectionTitle, Stat, cx } from '../components/ui'
 import {
   cycleMaxDrift,
   cycleProgress,
+  cycleSlots,
   isCycleComplete,
   liftFor,
   mainExerciseId,
@@ -209,8 +210,11 @@ export function HomeScreen() {
       </div>
 
       <SectionTitle>This week</SectionTitle>
-      <div className="grid grid-cols-4 gap-1.5">
-        {(['A', 'B', 'C', 'D'] as const).map((slot) => {
+      <div
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${cycleSlots(cycle).length}, minmax(0, 1fr))` }}
+      >
+        {cycleSlots(cycle).map((slot) => {
           const week = next?.week ?? 4
           const session = cycle.sessions[`w${week}${slot}`]
           if (!session) return <span key={slot} />

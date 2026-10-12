@@ -1,4 +1,4 @@
-import { contextFor, prescriptionFor, liftFor, mainExerciseId } from './cycle'
+import { contextFor, cycleSlots, prescriptionFor, liftFor, mainExerciseId } from './cycle'
 import { incrementFor } from './engine'
 import { getExercise } from './exercises'
 import type {
@@ -178,7 +178,7 @@ export function sessionToText(
 
 export function weekToText(cycle: Cycle, week: WeekNumber, settings: Settings): string {
   const parts: string[] = []
-  for (const slot of ['A', 'B', 'C', 'D'] as const) {
+  for (const slot of cycleSlots(cycle)) {
     const session = cycle.sessions[`w${week}${slot}`]
     if (session) parts.push(sessionToText(cycle, session, settings))
   }

@@ -1,6 +1,6 @@
 import { newId, today } from './cycle'
 import { DEFAULT_TEMPLATE_ID } from './templates'
-import type { DaySlot, Lift, PlannedAccessory, Profile, Settings } from './types'
+import { slotsForDayCount, type DaySlot, type Lift, type PlannedAccessory, type Profile, type Settings } from './types'
 import { lbToKg } from './units'
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,6 +59,10 @@ const plan = (
   B: b.map(acc),
   C: c.map(acc),
   D: d.map(acc),
+  // Present but empty: a cycle only trains the slots its lifts cover, and
+  // keeping the record total saves optional lookups everywhere else.
+  E: [],
+  F: [],
 })
 
 /** A balanced starting point for someone setting up fresh. */
@@ -158,3 +162,26 @@ export function createProfile(id: string, displayName: string, seed: SeedKind, e
 }
 
 export const startOfToday = today
+
+/**
+ * Main lifts for a given number of training days.
+ *
+ * Fewer days means fewer main lifts, not the same four squeezed in: at three
+ * days the press moves to the accessory slot it effectively occupies anyway, and
+ * at two you are running a squat/bench or deadlift/press pairing. Training the
+ * full four lifts less often needs none of this — a cycle is sixteen sessions in
+ * whatever order you get to them, so twice a week simply takes eight weeks.
+ */
+export function liftsForDayCount(count: number, from: Lift[] = DEFAULT_LIFTS): Lift[] {
+  const slots = slotsForDayCount(count)
+  // Keep the heaviest-value lifts when trimming: squat, deadlift, then presses.
+  const priority = ['deadlift', 'back-squat', 'front-squat', 'bench', 'ohp']
+  const ranked = [...from].sort(
+    (a, b) =>
+      (priority.indexOf(a.exerciseId) === -1 ? 99 : priority.indexOf(a.exerciseId)) -
+      (priority.indexOf(b.exerciseId) === -1 ? 99 : priority.indexOf(b.exerciseId)),
+  )
+  const chosen = slots.length >= from.length ? [...from] : ranked.slice(0, slots.length)
+  // Re-letter so the days are always A, B, C… with no gaps.
+  return chosen.map((lift, index) => ({ ...lift, slot: slots[index] }))
+}

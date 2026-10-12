@@ -5,6 +5,7 @@ import { Button, Card, Empty, Field, NumberField, Pill, SectionTitle, Sheet, Sta
 import { contextFor, isCycleComplete } from '../lib/cycle'
 import { trainingMaxFromEstimate } from '../lib/engine'
 import { getExercise } from '../lib/exercises'
+import { liftsForDayCount } from '../lib/defaults'
 import { personalBest, reviewCycle, type LiftReview } from '../lib/progression'
 import type { DaySlot, Lift, LiftCategory } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
@@ -249,6 +250,7 @@ export function LiftsScreen() {
   const cycles = useApp((s) => s.cycles)
   const cycle = useActiveCycle()
   const startCycle = useApp((s) => s.startCycle)
+  const setLifts = useApp((s) => s.setLifts)
   const weight = useWeight()
   const toast = useToast()
   const [reviewing, setReviewing] = useState(false)
@@ -299,6 +301,29 @@ export function LiftsScreen() {
           </Button>
         </Empty>
       )}
+
+      <SectionTitle>Training days</SectionTitle>
+      <Card className="mb-5 p-3">
+        <div className="flex gap-1.5">
+          {[2, 3, 4].map((count) => (
+            <Pill
+              key={count}
+              active={profile.lifts.length === count}
+              onClick={() => setLifts(liftsForDayCount(count, profile.lifts))}
+            >
+              {count} days
+            </Pill>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-ink-400">
+          One main lift per day, so fewer days means fewer main lifts — the ones dropped are the presses
+          first. Applies to your next cycle; the one you're running keeps its own days.
+        </p>
+        <p className="mt-1.5 text-xs text-ink-400">
+          If you just can't get to the gym four times a week, leave this at 4. A cycle is sixteen sessions in
+          whatever order you reach them, so training twice a week simply makes a cycle take eight weeks.
+        </p>
+      </Card>
 
       <SectionTitle>Main lifts</SectionTitle>
       <div className="space-y-2.5">

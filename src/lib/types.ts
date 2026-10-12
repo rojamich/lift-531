@@ -1,7 +1,22 @@
 import type { Unit } from './units'
 
-export type DaySlot = 'A' | 'B' | 'C' | 'D'
-export const DAY_SLOTS: DaySlot[] = ['A', 'B', 'C', 'D']
+export type DaySlot = 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
+
+/**
+ * Every slot the data model allows. A cycle uses only as many as it has main
+ * lifts — see `cycleSlots` — so a three-day split simply has no D.
+ * The plan is keyed on all of them regardless, with empty lists for the unused
+ * ones, which keeps `Record<DaySlot, …>` total and avoids optional lookups
+ * spreading through every screen.
+ */
+export const DAY_SLOTS: DaySlot[] = ['A', 'B', 'C', 'D', 'E', 'F']
+
+/** How many training days a cycle can be built around. */
+export const MIN_DAYS = 2
+export const MAX_DAYS = 6
+
+export const slotsForDayCount = (count: number): DaySlot[] =>
+  DAY_SLOTS.slice(0, Math.min(MAX_DAYS, Math.max(MIN_DAYS, count)))
 
 export type WeekNumber = 1 | 2 | 3 | 4
 export const WEEK_NUMBERS: WeekNumber[] = [1, 2, 3, 4]

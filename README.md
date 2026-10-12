@@ -10,6 +10,12 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   private to that account — nothing is shared between them.
 - **Training maxes.** Enter an estimated 1RM per lift; the training max is a
   configurable percentage (85% by default), rounded to whatever you can load.
+- **Two, three or four training days.** Set it under Lifts and the next cycle is
+  built around that many days — a three-day cycle is twelve sessions, not
+  sixteen, and the month grid, report and share all follow. Fewer days means
+  fewer main lifts, the presses dropping first. Training all four lifts *less
+  often* needs no setting at all: a cycle is sixteen sessions in whatever order
+  you reach them, so twice a week just makes a cycle take eight weeks.
 - **Any 5/3/1 variant.** FSL 5×5, FSL AMRAP, SSL, BBB (flat or ramping), BBS,
   Widowmaker, 5's PRO, or main work only. Every week percentage, rep target,
   warm-up and supplemental setting is editable, and edits save as your own

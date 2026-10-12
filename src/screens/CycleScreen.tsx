@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useToast, useWeight } from '../components/hooks'
 import { Button, Card, Empty, Pill, SectionTitle, Sheet, Toast, cx } from '../components/ui'
-import { cycleProgress, isCycleComplete, liftFor, mainExerciseId, prescriptionFor } from '../lib/cycle'
+import {
+  cycleProgress,
+  cycleSlots,
+  isCycleComplete,
+  liftFor,
+  mainExerciseId,
+  prescriptionFor,
+} from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
 import { cycleToText, sessionToText, shareText, weekToText } from '../lib/share'
-import { DAY_SLOTS, WEEK_NUMBERS, type Cycle, type Session, type Settings, type WeekNumber } from '../lib/types'
+import { WEEK_NUMBERS, type Cycle, type Session, type Settings, type WeekNumber } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
 import { CycleReportView } from './CycleReport'
 
@@ -54,7 +61,7 @@ function WeekDetail({ cycle, week, settings }: { cycle: Cycle; week: WeekNumber;
 
   return (
     <div className="space-y-2">
-      {DAY_SLOTS.map((slot) => {
+      {cycleSlots(cycle).map((slot) => {
         const session = cycle.sessions[`w${week}${slot}`]
         if (!session) return null
         const lift = liftFor(cycle, slot)
@@ -193,6 +200,7 @@ export function CycleScreen() {
   }
 
   const settings = profile.settings
+  const slots = cycleSlots(cycle)
   const progress = cycleProgress(cycle)
   const complete = isCycleComplete(cycle)
 
@@ -250,9 +258,12 @@ export function CycleScreen() {
 
       <SectionTitle>The month</SectionTitle>
       <Card className="mb-5 p-3">
-        <div className="mb-2 grid grid-cols-[2.5rem_repeat(4,1fr)] gap-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+        <div
+          className="mb-2 grid gap-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-ink-400"
+          style={{ gridTemplateColumns: `2.5rem repeat(${slots.length}, 1fr)` }}
+        >
           <span />
-          {DAY_SLOTS.map((slot) => {
+          {slots.map((slot) => {
             const lift = liftFor(cycle, slot)
             return (
               <span key={slot} className="truncate">
@@ -263,7 +274,11 @@ export function CycleScreen() {
         </div>
         <div className="space-y-1.5">
           {WEEK_NUMBERS.map((w) => (
-            <div key={w} className="grid grid-cols-[2.5rem_repeat(4,1fr)] items-stretch gap-1.5">
+            <div
+              key={w}
+              className="grid items-stretch gap-1.5"
+              style={{ gridTemplateColumns: `2.5rem repeat(${slots.length}, 1fr)` }}
+            >
               <button
                 type="button"
                 onClick={() => setWeek(w)}
@@ -277,7 +292,7 @@ export function CycleScreen() {
                   {cycle.template.weeks[w - 1].isDeload ? 'deload' : cycle.template.weeks[w - 1].label}
                 </span>
               </button>
-              {DAY_SLOTS.map((slot) => {
+              {slots.map((slot) => {
                 const session = cycle.sessions[`w${w}${slot}`]
                 if (!session) return <span key={slot} />
                 return (

@@ -293,7 +293,7 @@ describe('swapping the main lift', () => {
   const cycle = createCycle({
     number: 1,
     lifts: SHEET_LIFTS,
-    accessoryPlan: { A: [], B: [], C: [], D: [] },
+    accessoryPlan: { A: [], B: [], C: [], D: [], E: [], F: [] },
     template: fsl,
     settings,
   })
