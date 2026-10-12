@@ -14,6 +14,7 @@ import { cycleToText, sessionToText, shareText, weekToText } from '../lib/share'
 import { WEEK_NUMBERS, type Cycle, type Session, type Settings, type WeekNumber } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
 import { CycleReportView } from './CycleReport'
+import { CyclePrint } from './CyclePrint'
 
 const STATUS_STYLE: Record<Session['status'], string> = {
   pending: 'border-ink-700 bg-ink-800/40 text-ink-300',
@@ -131,40 +132,6 @@ function WeekDetail({ cycle, week, settings }: { cycle: Cycle; week: WeekNumber;
   )
 }
 
-/** Full cycle on one page — for printing or screenshotting. */
-function PrintView({ cycle, settings }: { cycle: Cycle; settings: Settings }) {
-  const weight = useWeight()
-  return (
-    <div className="space-y-5">
-      <div className="border-b border-ink-700 pb-3">
-        <h1 className="text-xl font-bold">{cycle.name}</h1>
-        <p className="text-sm text-ink-400">
-          {cycle.template.name} · training max {Math.round(cycle.tmPercent * 100)}% · started{' '}
-          {new Date(cycle.startDate).toLocaleDateString()}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-3 text-sm">
-          {cycle.lifts.map((lift) => (
-            <span key={lift.slot}>
-              <span className="text-ink-400">{lift.slot}</span> {lift.label ?? getExercise(lift.exerciseId).name}{' '}
-              <span className="tabular font-semibold">
-                {weight.fullFor(lift.trainingMaxKg, getExercise(lift.exerciseId).equipment)}
-              </span>
-            </span>
-          ))}
-        </div>
-      </div>
-      {WEEK_NUMBERS.map((week) => (
-        <section key={week} className="print-page">
-          <h2 className="mb-2 text-sm font-bold uppercase tracking-[0.14em] text-ink-400">
-            Week {week} — {cycle.template.weeks[week - 1].label}
-          </h2>
-          <WeekDetail cycle={cycle} week={week} settings={settings} />
-        </section>
-      ))}
-    </div>
-  )
-}
-
 export function CycleScreen() {
   const activeCycle = useActiveCycle()
   const cycles = useApp((s) => s.cycles)
@@ -224,7 +191,7 @@ export function CycleScreen() {
             Print / Save as PDF
           </Button>
         </div>
-        <PrintView cycle={cycle} settings={settings} />
+        <CyclePrint cycle={cycle} profile={profile} />
       </div>
     )
   }

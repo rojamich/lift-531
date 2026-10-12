@@ -103,4 +103,49 @@
   .print-page {
     break-inside: avoid;
   }
+
+  /*
+   * The app is a dark theme; paper is not. Remapping the tokens rather than
+   * overriding each element means every text-ink-* and border-ink-* utility
+   * becomes paper-appropriate on its own, and the accents stop relying on
+   * colour — a printout has to survive being photocopied in black and white.
+   */
+  :root {
+    --color-ink-100: #000;
+    --color-ink-300: #333;
+    --color-ink-400: #595959;
+    --color-ink-600: #b8b8b8;
+    --color-ink-700: #cfcfcf;
+    --color-ink-800: #ffffff;
+    --color-ink-850: #ffffff;
+    --color-ink-900: #ffffff;
+    --color-ink-950: #ffffff;
+    --color-brand-400: #000;
+    --color-brand-500: #000;
+    --color-brand-600: #777;
+    --color-flame-400: #000;
+    --color-flame-500: #777;
+  }
+
+  /* Filled chips and cards would print as grey slabs over the text. */
+  #root,
+  #root * {
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  #root {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
 }

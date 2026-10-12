@@ -1,21 +1,8 @@
-import { contextFor, cycleSlots, prescriptionFor, liftFor, mainExerciseId } from './cycle'
-import { incrementFor } from './engine'
+import { cycleSlots } from './cycle'
 import { getExercise } from './exercises'
-import type {
-  Cycle,
-  Equipment,
-  LoggedAccessory,
-  LoggedSet,
-  PrescribedSetLike,
-  Session,
-  Settings,
-  WeekNumber,
-} from './types'
-import { formatNumber, fromKg, roundTo, type Unit } from './units'
-
-/** Snap a stored kilogram value to what the implement can actually be loaded to. */
-const loadable = (kg: number, equipment: Equipment, settings: Settings) =>
-  formatNumber(roundTo(fromKg(kg, settings.unit), incrementFor(equipment, contextFor(settings))))
+import { buildSessionView, stateLabel } from './sessionView'
+import type { Cycle, Session, Settings, WeekNumber } from './types'
+import { formatNumber, fromKg } from './units'
 
 const pad = (text: string, width: number) => text.padEnd(width, ' ')
 
@@ -24,22 +11,17 @@ function weightLabel(weight: number | null, unit: string, perHand: boolean): str
   return `${formatNumber(weight)} ${unit}${perHand ? '/hand' : ''}`
 }
 
-/** Logged weight, shown at the precision it was entered rather than snapped. */
-const loggedWeight = (kg: number | null, unit: Unit, perHand: boolean) =>
-  kg === null ? 'bodyweight' : `${formatNumber(Math.round(fromKg(kg, unit) * 10) / 10)} ${unit}${perHand ? '/hand' : ''}`
-
 export interface SessionTextOptions {
-  /** Prefix each day with its week and slot. Used when several are in one message. */
+  /** Prefix the day with its week and slot. Used when several are in one message. */
   heading?: boolean
 }
 
+const repsLabel = (row: { reps: number; amrap: boolean; done: boolean }) =>
+  row.done || !row.amrap ? String(row.reps) : `${row.reps}+`
+
 /**
- * A day as text.
- *
- * Reports what was actually done wherever it was logged, and the plan for
- * anything still ahead — so a finished day shares as a record, an upcoming day
- * shares as a plan, and a half-finished one shares honestly as both. Sharing the
- * prescription for a day you already trained says nothing about how it went.
+ * A day as text. Reports what was done wherever it was logged and the plan for
+ * anything still ahead, via the shared resolver in sessionView.
  */
 export function sessionToText(
   cycle: Cycle,
@@ -47,130 +29,69 @@ export function sessionToText(
   settings: Settings,
   options: SessionTextOptions = {},
 ): string {
-  const lift = liftFor(cycle, session.slot)
-  const exercise = getExercise(mainExerciseId(cycle, session))
-  const p = prescriptionFor(cycle, session, settings)
+  const view = buildSessionView(cycle, session, settings)
   const unit = settings.unit
-  const weekSpec = cycle.template.weeks[session.week - 1]
   const lines: string[] = []
 
-  const anythingLogged =
-    session.mainSets.some((set) => set.done) ||
-    session.supplementalSets.some((set) => set.done) ||
-    session.accessories.some((a) => a.sets.some((set) => set.done))
-
   if (options.heading !== false) {
-    lines.push(`${cycle.name} · Week ${session.week} · Day ${session.slot} — ${lift?.label ?? exercise.name}`)
+    lines.push(`${cycle.name} · Week ${view.week} · Day ${view.slot} — ${view.liftLabel}`)
   }
-
-  const state =
-    session.status === 'complete'
-      ? session.completedDate
-        ? `Done ${new Date(session.completedDate).toLocaleDateString()}`
-        : 'Done'
-      : session.status === 'skipped'
-        ? 'Skipped'
-        : anythingLogged
-          ? 'In progress'
-          : 'Planned'
-  lines.push(`${weekSpec.label} · TM ${formatNumber(p.trainingMax)} ${unit} · ${state}`)
-
-  if (session.mainExerciseId && session.mainExerciseId !== lift?.exerciseId) {
-    lines.push(`Swapped to ${exercise.name}`)
-  }
+  lines.push(`${view.weekLabel} · TM ${formatNumber(view.trainingMax)} ${unit} · ${stateLabel(view)}`)
+  if (view.swappedTo) lines.push(`Swapped to ${view.swappedTo}`)
   lines.push('')
 
-  if (session.status === 'skipped') {
+  if (view.state === 'skipped') {
     lines.push('  (not trained)')
     return lines.join('\n')
   }
 
-  /** A logged set wins over its prescription; an untouched one shows the plan. */
-  const byId = new Map<string, LoggedSet>(
-    [...session.mainSets, ...session.supplementalSets].map((set) => [set.id, set]),
-  )
-  const renderSet = (prescribed: PrescribedSetLike, label: string) => {
-    const logged = byId.get(prescribed.id)
-    if (logged?.done) {
-      const star =
-        prescribed.amrap && (logged.actualReps ?? 0) > prescribed.reps ? '  ★' : ''
-      return `${pad(label, 10)} ${pad(loggedWeight(logged.actualWeightKg, unit, prescribed.perHand), 16)} × ${logged.actualReps ?? '—'}${star}`
-    }
-    const reps = prescribed.amrap ? `${prescribed.reps}+` : String(prescribed.reps)
-    const capped = prescribed.capped ? '  (capped — extra reps)' : ''
-    const pending = anythingLogged ? '  (not done)' : ''
-    return `${pad(label, 10)} ${pad(weightLabel(prescribed.weight, unit, prescribed.perHand), 16)} × ${reps}${capped}${pending}`
+  for (const row of [...view.warmups, ...view.main]) {
+    const star = row.beatTarget ? '  ★' : ''
+    const capped = !row.done && row.capped ? '  (capped — extra reps)' : ''
+    const pending = !row.done && view.anythingLogged ? '  (not done)' : ''
+    lines.push(
+      `${pad(row.label, 10)} ${pad(weightLabel(row.weight, unit, row.perHand), 16)} × ${repsLabel(row)}${star}${capped}${pending}`,
+    )
   }
 
-  for (const set of [...p.warmups, ...p.main]) lines.push(renderSet(set, set.label))
-
-  if (p.supplemental.length > 0) {
+  if (view.supplemental.length > 0) {
     lines.push('')
-    lines.push(p.supplementalLabel)
-    const doneSupplemental = session.supplementalSets.filter((set) => set.done)
-    if (doneSupplemental.length > 0) {
-      // One line for the lot: the reps are what vary, the weight rarely does.
-      const first = doneSupplemental[0]
-      const reps = doneSupplemental.map((set) => set.actualReps ?? 0).join('/')
+    lines.push(view.supplementalLabel)
+    if (view.supplementalSummary) {
+      const { weight, reps, of } = view.supplementalSummary
+      const partial = reps.length < of ? `  (${reps.length} of ${of} sets)` : ''
       lines.push(
-        `${pad('', 10)} ${pad(loggedWeight(first.actualWeightKg, unit, p.supplemental[0].perHand), 16)} × ${reps}` +
-          (doneSupplemental.length < p.supplemental.length
-            ? `  (${doneSupplemental.length} of ${p.supplemental.length} sets)`
-            : ''),
+        `${pad('', 10)} ${pad(weightLabel(weight, unit, view.supplemental[0].perHand), 16)} × ${reps.join('/')}${partial}`,
       )
     } else {
-      const first = p.supplemental[0]
+      const first = view.supplemental[0]
       lines.push(
-        `${pad('', 10)} ${pad(weightLabel(first.weight, unit, first.perHand), 16)} × ${first.amrap ? `${first.reps}+` : first.reps} × ${p.supplemental.length} sets`,
+        `${pad('', 10)} ${pad(weightLabel(first.weight, unit, first.perHand), 16)} × ${repsLabel(first)} × ${view.supplemental.length} sets`,
       )
     }
   }
 
-  const planned = (cycle.accessoryPlan[session.slot] ?? []).filter((a) => a.active)
-  const loggedByPlanId = new Map<string, LoggedAccessory>(
-    session.accessories.map((entry) => [entry.planId, entry]),
-  )
-  // Rows the session carries but the plan no longer does, e.g. after a swap.
-  const extras = session.accessories.filter((entry) => !planned.some((item) => item.id === entry.planId))
-
-  if (planned.length > 0 || extras.length > 0) {
+  if (view.accessories.length > 0) {
     lines.push('')
     lines.push('Accessories')
-
-    for (const item of planned) {
-      const entry = loggedByPlanId.get(item.id)
-      const ex = getExercise(entry?.exerciseId ?? item.exerciseId)
-      if (entry?.skipped) {
-        lines.push(`• ${pad(ex.name, 26)} skipped`)
+    for (const row of view.accessories) {
+      if (row.skipped) {
+        lines.push(`• ${pad(row.name, 26)} skipped`)
         continue
       }
-      const done = entry?.sets.filter((set) => set.done) ?? []
-      if (done.length > 0) {
-        const reps = done.map((set) => set.reps ?? 0).join('/')
-        lines.push(`• ${pad(ex.name, 26)} ${loggedWeight(done[0].weightKg, unit, Boolean(ex.perHand))} × ${reps}`)
+      if (row.done) {
+        lines.push(`• ${pad(row.name, 26)} ${weightLabel(row.weight, unit, row.perHand)} × ${row.reps.join('/')}`)
         continue
       }
-      const weight =
-        item.targetWeightKg === null
-          ? 'bodyweight'
-          : `${loadable(item.targetWeightKg, ex.equipment, settings)} ${unit}${ex.perHand ? '/hand' : ''}`
       lines.push(
-        `• ${pad(ex.name, 26)} ${item.sets} × ${pad(item.targetReps, 7)} @ ${weight}${anythingLogged ? '  (not done)' : ''}`,
+        `• ${pad(row.name, 26)} ${row.plannedSets} × ${pad(row.targetReps, 7)} @ ${weightLabel(row.weight, unit, row.perHand)}${view.anythingLogged ? '  (not done)' : ''}`,
       )
-    }
-
-    for (const entry of extras) {
-      const ex = getExercise(entry.exerciseId)
-      const done = entry.sets.filter((set) => set.done)
-      if (done.length === 0) continue
-      const reps = done.map((set) => set.reps ?? 0).join('/')
-      lines.push(`• ${pad(ex.name, 26)} ${loggedWeight(done[0].weightKg, unit, Boolean(ex.perHand))} × ${reps}`)
     }
   }
 
-  if (session.notes.trim()) {
+  if (view.notes.trim()) {
     lines.push('')
-    lines.push(`Notes: ${session.notes.trim()}`)
+    lines.push(`Notes: ${view.notes.trim()}`)
   }
 
   return lines.join('\n')
