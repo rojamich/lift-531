@@ -5,12 +5,12 @@ import { Button, Card, Empty, Field, NumberField, Pill, SectionTitle, Sheet, Sta
 import { contextFor, isCycleComplete } from '../lib/cycle'
 import { trainingMaxFromEstimate } from '../lib/engine'
 import { getExercise } from '../lib/exercises'
-import { liftsForDayCount } from '../lib/defaults'
+import { dayOptions, liftDays, liftsForDayCount } from '../lib/defaults'
 import { personalBest, reviewCycle, type LiftReview } from '../lib/progression'
-import type { DaySlot, Lift, LiftCategory } from '../lib/types'
+import type { Lift, LiftCategory } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
 
-function LiftEditor({ lift }: { lift: Lift }) {
+function LiftEditor({ lift, index }: { lift: Lift; index: number }) {
   const profile = useApp((s) => s.profile)!
   const setLifts = useApp((s) => s.setLifts)
   const weight = useWeight()
@@ -20,8 +20,12 @@ function LiftEditor({ lift }: { lift: Lift }) {
   const ctx = contextFor(profile.settings)
   const trainingMaxKg = trainingMaxFromEstimate(lift.est1RMKg, profile.settings.tmPercent, exercise.equipment, ctx)
 
+  /* By position, not by day: a combined day holds more than one lift. */
   const patch = (next: Partial<Lift>) =>
-    setLifts(profile.lifts.map((l) => (l.slot === lift.slot ? { ...l, ...next } : l)))
+    setLifts(profile.lifts.map((l, i) => (i === index ? { ...l, ...next } : l)))
+
+  const slots = dayOptions(profile.lifts)
+  const sharing = profile.lifts.filter((l, i) => i !== index && l.slot === lift.slot)
 
   return (
     <Card className="p-3">
@@ -44,6 +48,33 @@ function LiftEditor({ lift }: { lift: Lift }) {
             </Pill>
           ))}
         </div>
+      </div>
+
+      <div className="mt-3">
+        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400">
+          Trained on
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {slots.map((slot) => (
+            <Pill
+              key={slot}
+              active={lift.slot === slot}
+              onClick={() => patch({ slot })}
+              ariaLabel={`Train ${lift.label ?? exercise.name} on day ${slot}`}
+            >
+              Day {slot}
+            </Pill>
+          ))}
+        </div>
+        {sharing.length > 0 ? (
+          <p className="mt-1.5 text-xs text-ink-400">
+            Trained together with{' '}
+            {sharing
+              .map((l) => l.label ?? getExercise(l.exerciseId, profile.customExercises).name)
+              .join(' and ')}
+            . Move it to the last day to give it a day of its own.
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -179,29 +210,33 @@ function CycleReview({ onClose }: { onClose: () => void }) {
     [cycle, profile.settings],
   )
 
+  /*
+   * Keyed by lift, not by day: a day that holds two main lifts has two maxes to
+   * choose, and by day one would quietly overwrite the other.
+   */
   const [choices, setChoices] = useState<Record<string, Choice>>(() =>
-    Object.fromEntries(reviews.map((r) => [r.slot, 'standard' as Choice])),
+    Object.fromEntries(reviews.map((r) => [r.key, 'standard' as Choice])),
   )
   const [manual, setManual] = useState<Record<string, number>>(() =>
-    Object.fromEntries(reviews.map((r) => [r.slot, r.incrementTrainingMaxKg])),
+    Object.fromEntries(reviews.map((r) => [r.key, r.incrementTrainingMaxKg])),
   )
 
   const resolve = (review: LiftReview): number => {
-    switch (choices[review.slot]) {
+    switch (choices[review.key]) {
       case 'amrap':
         return review.amrapTrainingMaxKg ?? review.incrementTrainingMaxKg
       case 'keep':
         return review.currentTrainingMaxKg
       case 'manual':
-        return manual[review.slot]
+        return manual[review.key]
       default:
         return review.incrementTrainingMaxKg
     }
   }
 
   const start = () => {
-    const maxes: Partial<Record<DaySlot, number>> = {}
-    for (const review of reviews) maxes[review.slot] = resolve(review)
+    const maxes: Record<string, number> = {}
+    for (const review of reviews) maxes[review.key] = resolve(review)
     finishCycle(maxes)
     onClose()
   }
@@ -214,19 +249,19 @@ function CycleReview({ onClose }: { onClose: () => void }) {
       </p>
       {reviews.map((review) => (
         <ReviewRow
-          key={review.slot}
+          key={review.key}
           review={review}
-          choice={choices[review.slot] ?? 'standard'}
-          manualKg={manual[review.slot] ?? review.incrementTrainingMaxKg}
-          onChoice={(choice) => setChoices((prev) => ({ ...prev, [review.slot]: choice }))}
-          onManual={(kg) => setManual((prev) => ({ ...prev, [review.slot]: kg }))}
+          choice={choices[review.key] ?? 'standard'}
+          manualKg={manual[review.key] ?? review.incrementTrainingMaxKg}
+          onChoice={(choice) => setChoices((prev) => ({ ...prev, [review.key]: choice }))}
+          onManual={(kg) => setManual((prev) => ({ ...prev, [review.key]: kg }))}
         />
       ))}
       <div className="rounded-xl border border-ink-700 bg-ink-800/60 p-3 text-sm">
         <div className="mb-1.5 font-semibold">Cycle {cycle.number + 1} starts with</div>
         <ul className="space-y-0.5 text-ink-300">
           {reviews.map((review) => (
-            <li key={review.slot} className="flex justify-between">
+            <li key={review.key} className="flex justify-between">
               <span>{review.label}</span>
               <span className="tabular font-semibold">
                 {weight.fullFor(resolve(review), getExercise(review.exerciseId).equipment)}
@@ -258,6 +293,7 @@ export function LiftsScreen() {
   if (!profile) return null
 
   const complete = cycle ? isCycleComplete(cycle) : false
+  const days = liftDays(profile.lifts)
   const history = profile.lifts.map((lift) => ({
     lift,
     best: personalBest(cycles, lift.exerciseId),
@@ -308,27 +344,45 @@ export function LiftsScreen() {
           {[2, 3, 4].map((count) => (
             <Pill
               key={count}
-              active={profile.lifts.length === count}
+              active={days.length === count}
               onClick={() => setLifts(liftsForDayCount(count, profile.lifts))}
             >
               {count} days
             </Pill>
           ))}
         </div>
+        <div className="mt-2.5 space-y-1">
+          {days.map((slot) => (
+            <div key={slot} className="flex gap-2 text-sm">
+              <span className="w-12 shrink-0 pt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400">
+                Day {slot}
+              </span>
+              <span className="min-w-0">
+                {profile.lifts
+                  .filter((lift) => lift.slot === slot)
+                  .map((lift) => lift.label ?? getExercise(lift.exerciseId, profile.customExercises).name)
+                  .join(' + ')}
+              </span>
+            </div>
+          ))}
+        </div>
         <p className="mt-2 text-xs text-ink-400">
-          One main lift per day, so fewer days means fewer main lifts — the ones dropped are the presses
-          first. Applies to your next cycle; the one you're running keeps its own days.
+          Fewer days combines lifts rather than dropping them — at three days the presses share a
+          day and squat and deadlift keep their own. Move any lift to another day below to pair or
+          separate them yourself. Applies to your next cycle; the one you're running keeps its own
+          days.
         </p>
         <p className="mt-1.5 text-xs text-ink-400">
-          If you just can't get to the gym four times a week, leave this at 4. A cycle is sixteen sessions in
-          whatever order you reach them, so training twice a week simply makes a cycle take eight weeks.
+          If you just can't get to the gym four times a week, leave this at 4. A cycle is sixteen
+          sessions in whatever order you reach them, so training twice a week simply makes a cycle
+          take eight weeks.
         </p>
       </Card>
 
       <SectionTitle>Main lifts</SectionTitle>
       <div className="space-y-2.5">
-        {profile.lifts.map((lift) => (
-          <LiftEditor key={lift.slot} lift={lift} />
+        {profile.lifts.map((lift, index) => (
+          <LiftEditor key={`${lift.slot}-${lift.exerciseId}`} lift={lift} index={index} />
         ))}
       </div>
       {cycle ? (
@@ -343,7 +397,10 @@ export function LiftsScreen() {
         {history.map(({ lift, best }) => {
           const exercise = getExercise(lift.exerciseId, profile.customExercises)
           return (
-            <div key={lift.slot} className="flex items-center justify-between gap-3 px-3 py-2.5">
+            <div
+              key={`${lift.slot}-${lift.exerciseId}`}
+              className="flex items-center justify-between gap-3 px-3 py-2.5"
+            >
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{lift.label ?? exercise.name}</div>
                 <div className="text-xs text-ink-400">

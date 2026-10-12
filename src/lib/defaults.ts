@@ -1,6 +1,15 @@
 import { newId, today } from './cycle'
 import { DEFAULT_TEMPLATE_ID } from './templates'
-import { slotsForDayCount, type DaySlot, type Lift, type PlannedAccessory, type Profile, type Settings } from './types'
+import {
+  DAY_SLOTS,
+  MAX_DAYS,
+  slotsForDayCount,
+  type DaySlot,
+  type Lift,
+  type PlannedAccessory,
+  type Profile,
+  type Settings,
+} from './types'
 import { lbToKg } from './units'
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -164,24 +173,61 @@ export function createProfile(id: string, displayName: string, seed: SeedKind, e
 export const startOfToday = today
 
 /**
- * Main lifts for a given number of training days.
+ * Re-letters days so they run A, B, C… with no gaps.
  *
- * Fewer days means fewer main lifts, not the same four squeezed in: at three
- * days the press moves to the accessory slot it effectively occupies anyway, and
- * at two you are running a squat/bench or deadlift/press pairing. Training the
- * full four lifts less often needs none of this — a cycle is sixteen sessions in
- * whatever order you get to them, so twice a week simply takes eight weeks.
+ * Each day's lifts stay together and in order. Moving the last lift off a day
+ * removes that day rather than leaving an empty one in the middle of a cycle.
+ */
+export function normalizeLiftDays(lifts: Lift[]): Lift[] {
+  const used = DAY_SLOTS.filter((slot) => lifts.some((lift) => lift.slot === slot))
+  return used.flatMap((slot, index) =>
+    lifts.filter((lift) => lift.slot === slot).map((lift) => ({ ...lift, slot: DAY_SLOTS[index] })),
+  )
+}
+
+/**
+ * Main lifts arranged over a given number of training days.
+ *
+ * Fewer days combines lifts rather than dropping them — all four still get
+ * trained, some of them on the same day. Each heavy lower lift claims a day of
+ * its own for as long as there are days to go round, then the presses fill in,
+ * so three days leaves squat and deadlift alone and pairs the two presses, and
+ * two days pairs a press with a pull and a press with a squat.
+ *
+ * Any lift can be moved to any day afterwards, which is what lets a layout be
+ * part combined and part separate.
  */
 export function liftsForDayCount(count: number, from: Lift[] = DEFAULT_LIFTS): Lift[] {
   const slots = slotsForDayCount(count)
-  // Keep the heaviest-value lifts when trimming: squat, deadlift, then presses.
-  const priority = ['deadlift', 'back-squat', 'front-squat', 'bench', 'ohp']
-  const ranked = [...from].sort(
-    (a, b) =>
-      (priority.indexOf(a.exerciseId) === -1 ? 99 : priority.indexOf(a.exerciseId)) -
-      (priority.indexOf(b.exerciseId) === -1 ? 99 : priority.indexOf(b.exerciseId)),
-  )
-  const chosen = slots.length >= from.length ? [...from] : ranked.slice(0, slots.length)
-  // Re-letter so the days are always A, B, C… with no gaps.
-  return chosen.map((lift, index) => ({ ...lift, slot: slots[index] }))
+  if (slots.length >= from.length) {
+    return from.map((lift, index) => ({ ...lift, slot: slots[index] }))
+  }
+
+  const days: Lift[][] = slots.map(() => [])
+  const lower = from.filter((lift) => lift.category === 'lower')
+  const upper = from.filter((lift) => lift.category !== 'lower')
+  lower.forEach((lift, index) => days[index % slots.length].push(lift))
+  for (const lift of upper) {
+    // The emptiest day, searching from the back, so the presses land together
+    // on the spare day instead of being split across the lower-lift days.
+    let target = 0
+    for (let i = 1; i < days.length; i += 1) if (days[i].length <= days[target].length) target = i
+    days[target].push(lift)
+  }
+
+  return days.flatMap((group, index) => group.map((lift) => ({ ...lift, slot: slots[index] })))
+}
+
+/** The days a lift list actually trains, in order. */
+export const liftDays = (lifts: Lift[]): DaySlot[] =>
+  DAY_SLOTS.filter((slot) => lifts.some((lift) => lift.slot === slot))
+
+/**
+ * The days a lift can be moved to: the ones in use, plus one more so a combined
+ * day can always be pulled apart again.
+ */
+export function dayOptions(lifts: Lift[]): DaySlot[] {
+  const used = liftDays(lifts)
+  const next = DAY_SLOTS[used.length]
+  return used.length < MAX_DAYS && next ? [...used, next] : used
 }

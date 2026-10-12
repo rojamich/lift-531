@@ -5,9 +5,8 @@ import {
   cycleProgress,
   cycleSlots,
   isCycleComplete,
-  liftFor,
-  mainExerciseId,
-  prescriptionFor,
+  liftsFor,
+  prescriptionsFor,
 } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
 import { cycleToText, sessionToText, shareText, weekToText } from '../lib/share'
@@ -35,8 +34,9 @@ function DayCell({
   onOpen: () => void
 }) {
   const weight = useWeight()
-  const p = useMemo(() => prescriptionFor(cycle, session, settings), [cycle, session, settings])
-  const top = p.main[p.main.length - 1]
+  const blocks = useMemo(() => prescriptionsFor(cycle, session, settings), [cycle, session, settings])
+  /* One top set per main lift — a combined day shows both, stacked. */
+  const tops = blocks.map((block) => block.prescription.main[block.prescription.main.length - 1])
 
   return (
     <button
@@ -48,10 +48,18 @@ function DayCell({
       )}
     >
       <span className="text-[11px] font-bold uppercase tracking-wide">{session.slot}</span>
-      <span className="tabular text-sm font-bold leading-none">{top?.weight ?? '—'}</span>
-      <span className="text-[9px] uppercase tracking-wide opacity-70">
-        {top ? `×${top.reps}${top.amrap ? '+' : ''}` : weight.unit}
-      </span>
+      {tops.length === 0 ? (
+        <span className="tabular text-sm font-bold leading-none">—</span>
+      ) : (
+        tops.map((top, index) => (
+          <span key={index} className="flex flex-col items-center gap-0.5">
+            <span className="tabular text-sm font-bold leading-none">{top?.weight ?? '—'}</span>
+            <span className="text-[9px] uppercase tracking-wide opacity-70">
+              {top ? `×${top.reps}${top.amrap ? '+' : ''}` : weight.unit}
+            </span>
+          </span>
+        ))
+      )}
     </button>
   )
 }
@@ -65,47 +73,62 @@ function WeekDetail({ cycle, week, settings }: { cycle: Cycle; week: WeekNumber;
       {cycleSlots(cycle).map((slot) => {
         const session = cycle.sessions[`w${week}${slot}`]
         if (!session) return null
-        const lift = liftFor(cycle, slot)
-        const exercise = getExercise(mainExerciseId(cycle, session))
-        const p = prescriptionFor(cycle, session, settings)
+        const blocks = prescriptionsFor(cycle, session, settings)
         const accessories = (cycle.accessoryPlan[slot] ?? []).filter((a) => a.active)
+        const combined = blocks.length > 1
 
         return (
           <Card key={slot} className="print-page p-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <h4 className="font-semibold">
-                <span className="text-ink-400">Day {slot} · </span>
-                {lift?.label ?? exercise.name}
-              </h4>
-              <span className="text-xs text-ink-400">
-                TM <span className="tabular">{p.trainingMax}</span> {weight.unit}
-              </span>
-            </div>
+            <h4 className="font-semibold">
+              <span className="text-ink-400">Day {slot} · </span>
+              {blocks.map((block) => block.lift?.label ?? block.exercise.name).join(' + ')}
+            </h4>
 
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {p.main.map((set) => (
-                <span
-                  key={set.id}
-                  className={cx(
-                    'tabular rounded-lg px-2 py-1 text-sm',
-                    set.amrap ? 'bg-flame-500/15 font-bold text-flame-400' : 'bg-ink-800',
-                  )}
-                >
-                  {set.weight ?? 'BW'} × {set.reps}
-                  {set.amrap ? '+' : ''}
-                </span>
-              ))}
-            </div>
+            {blocks.map((block) => {
+              const p = block.prescription
+              return (
+                <div key={block.ordinal} className={combined ? 'mt-1.5' : ''}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    {combined ? (
+                      <span className="min-w-0 text-sm font-medium">
+                        {block.lift?.label ?? block.exercise.name}
+                        {block.lift && block.exercise.id !== block.lift.exerciseId ? (
+                          <span className="font-normal text-flame-400"> → {block.exercise.name}</span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    <span className={cx('text-xs text-ink-400', combined ? 'shrink-0' : 'ml-auto')}>
+                      TM <span className="tabular">{p.trainingMax}</span> {weight.unit}
+                    </span>
+                  </div>
 
-            {p.supplemental.length > 0 ? (
-              <div className="mt-1.5 text-xs text-ink-300">
-                <span className="text-ink-400">{cycle.template.supplemental.label}: </span>
-                <span className="tabular">
-                  {p.supplemental[0].weight ?? 'BW'} × {p.supplemental[0].reps}
-                  {p.supplemental[0].amrap ? '+' : ''} × {p.supplemental.length} sets
-                </span>
-              </div>
-            ) : null}
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {p.main.map((set) => (
+                      <span
+                        key={set.id}
+                        className={cx(
+                          'tabular rounded-lg px-2 py-1 text-sm',
+                          set.amrap ? 'bg-flame-500/15 font-bold text-flame-400' : 'bg-ink-800',
+                        )}
+                      >
+                        {set.weight ?? 'BW'} × {set.reps}
+                        {set.amrap ? '+' : ''}
+                      </span>
+                    ))}
+                  </div>
+
+                  {p.supplemental.length > 0 ? (
+                    <div className="mt-1.5 text-xs text-ink-300">
+                      <span className="text-ink-400">{cycle.template.supplemental.label}: </span>
+                      <span className="tabular">
+                        {p.supplemental[0].weight ?? 'BW'} × {p.supplemental[0].reps}
+                        {p.supplemental[0].amrap ? '+' : ''} × {p.supplemental.length} sets
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
 
             {!weekSpec.isDeload && accessories.length > 0 ? (
               <ul className="mt-2 space-y-0.5 border-t border-ink-700/60 pt-2 text-xs text-ink-300">
@@ -231,10 +254,13 @@ export function CycleScreen() {
         >
           <span />
           {slots.map((slot) => {
-            const lift = liftFor(cycle, slot)
+            const names = liftsFor(cycle, slot).map(
+              (lift) => lift.label ?? getExercise(lift.exerciseId).name,
+            )
             return (
-              <span key={slot} className="truncate">
-                {(lift?.label ?? getExercise(lift?.exerciseId ?? '').name).split(' ')[0]}
+              // A combined day's two names would truncate on one line.
+              <span key={slot} className="min-w-0 leading-tight">
+                {names.map((name) => name.split(' ')[0]).join(' + ')}
               </span>
             )
           })}

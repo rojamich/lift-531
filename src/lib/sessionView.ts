@@ -1,4 +1,4 @@
-import { contextFor, liftFor, mainExerciseId, prescriptionFor } from './cycle'
+import { contextFor, prescriptionsFor, setBelongsTo } from './cycle'
 import { incrementFor } from './engine'
 import { getExercise } from './exercises'
 import type { Cycle, Exercise, LoggedAccessory, LoggedSet, Session, Settings } from './types'
@@ -12,6 +12,10 @@ import { fromKg, roundTo } from './units'
  * anything still ahead — and while that rule lived inside the text formatter the
  * print view went on rendering the prescription, presenting a plan as though it
  * were a record of what happened.
+ *
+ * A day can carry more than one main lift, so the per-lift parts live in
+ * `lifts`. Everything shared by the day — its state, accessories and notes —
+ * stays at the top.
  *
  * Weights come out in display units, already the right side of the kilogram
  * boundary, because every consumer is about to render them.
@@ -49,23 +53,31 @@ export interface AccessoryRow {
   swapped: boolean
 }
 
-export interface SessionView {
-  week: number
-  slot: string
-  liftLabel: string
-  weekLabel: string
+/** One main lift of a day, with its own warm-ups, working sets and supplemental. */
+export interface LiftView {
+  ordinal: number
+  label: string
   trainingMax: number
-  state: SessionState
-  completedDate: string | null
-  /** Set when the day ran on a substitute movement. */
+  /** Set when this lift ran on a substitute movement. */
   swappedTo: string | null
-  anythingLogged: boolean
   warmups: SetRow[]
   main: SetRow[]
   supplementalLabel: string
   supplemental: SetRow[]
   /** One line for the whole supplemental block, once it has been logged. */
   supplementalSummary: { weight: number | null; reps: number[]; of: number } | null
+}
+
+export interface SessionView {
+  week: number
+  slot: string
+  /** The day's lifts joined, e.g. "Press + Bench Press". */
+  liftLabel: string
+  weekLabel: string
+  state: SessionState
+  completedDate: string | null
+  anythingLogged: boolean
+  lifts: LiftView[]
   accessories: AccessoryRow[]
   notes: string
 }
@@ -76,9 +88,7 @@ export function buildSessionView(
   settings: Settings,
   custom: Exercise[] = [],
 ): SessionView {
-  const lift = liftFor(cycle, session.slot)
-  const exercise = getExercise(mainExerciseId(cycle, session), custom)
-  const p = prescriptionFor(cycle, session, settings)
+  const blocks = prescriptionsFor(cycle, session, settings)
   const weekSpec = cycle.template.weeks[session.week - 1]
   const unit = settings.unit
   const ctx = contextFor(settings)
@@ -108,7 +118,15 @@ export function buildSessionView(
     [...session.mainSets, ...session.supplementalSets].map((set) => [set.id, set]),
   )
 
-  const toRow = (prescribed: (typeof p.main)[number]): SetRow => {
+  const toRow = (prescribed: {
+    id: string
+    label: string
+    weight: number | null
+    reps: number
+    amrap: boolean
+    perHand: boolean
+    capped: boolean
+  }): SetRow => {
     const logged = byId.get(prescribed.id)
     const done = Boolean(logged?.done)
     const reps = done ? (logged?.actualReps ?? prescribed.reps) : prescribed.reps
@@ -125,6 +143,32 @@ export function buildSessionView(
       beatTarget: prescribed.amrap && done && reps > prescribed.reps,
     }
   }
+
+  const lifts: LiftView[] = blocks.map((block) => {
+    const p = block.prescription
+    const doneSupplemental = session.supplementalSets.filter(
+      (set) => set.done && setBelongsTo(set.id, block.ordinal),
+    )
+    return {
+      ordinal: block.ordinal,
+      label: block.lift?.label ?? block.exercise.name,
+      trainingMax: p.trainingMax,
+      swappedTo:
+        block.lift && block.exercise.id !== block.lift.exerciseId ? block.exercise.name : null,
+      warmups: p.warmups.map(toRow),
+      main: p.main.map(toRow),
+      supplementalLabel: p.supplementalLabel,
+      supplemental: p.supplemental.map(toRow),
+      supplementalSummary:
+        doneSupplemental.length > 0
+          ? {
+              weight: shownLogged(doneSupplemental[0].actualWeightKg),
+              reps: doneSupplemental.map((set) => set.actualReps ?? 0),
+              of: p.supplemental.length,
+            }
+          : null,
+    }
+  })
 
   const planned = cycle.accessoryPlan[session.slot] ?? []
   const plannedIds = new Set(planned.map((item) => item.id))
@@ -172,31 +216,15 @@ export function buildSessionView(
     })
   }
 
-  const doneSupplemental = session.supplementalSets.filter((set) => set.done)
-
   return {
     week: session.week,
     slot: session.slot,
-    liftLabel: lift?.label ?? exercise.name,
+    liftLabel: lifts.map((lift) => lift.label).join(' + '),
     weekLabel: weekSpec.label,
-    trainingMax: p.trainingMax,
     state,
     completedDate: session.completedDate ?? null,
-    swappedTo:
-      session.mainExerciseId && session.mainExerciseId !== lift?.exerciseId ? exercise.name : null,
     anythingLogged,
-    warmups: p.warmups.map(toRow),
-    main: p.main.map(toRow),
-    supplementalLabel: p.supplementalLabel,
-    supplemental: p.supplemental.map(toRow),
-    supplementalSummary:
-      doneSupplemental.length > 0
-        ? {
-            weight: shownLogged(doneSupplemental[0].actualWeightKg),
-            reps: doneSupplemental.map((set) => set.actualReps ?? 0),
-            of: p.supplemental.length,
-          }
-        : null,
+    lifts,
     accessories,
     notes: session.notes,
   }

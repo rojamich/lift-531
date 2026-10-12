@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyAccessoryPlan, createCycle, cycleSlots, hydrateSession, nextSession } from './cycle'
-import { DEFAULT_LIFTS, DEFAULT_SETTINGS, liftsForDayCount } from './defaults'
+import { DEFAULT_LIFTS, DEFAULT_SETTINGS, liftsForDayCount, normalizeLiftDays } from './defaults'
 import { repGoal } from './progression'
 import { buildCycleReport } from './report'
 import { findTemplate } from './templates'
@@ -229,16 +229,44 @@ describe('cycles with fewer training days', () => {
     expect(buildCycleReport(cycle).lifts).toHaveLength(3)
   })
 
-  it('trims the presses first when dropping to three days', () => {
+  it('combines the two presses at three days, leaving squat and deadlift alone', () => {
     const three = liftsForDayCount(3, DEFAULT_LIFTS)
-    expect(three).toHaveLength(3)
-    expect(three.map((l) => l.slot)).toEqual(['A', 'B', 'C'])
-    expect(three.map((l) => l.exerciseId)).not.toContain('ohp')
+    // All four lifts still trained — three days means some share a day.
+    expect(three).toHaveLength(4)
+    expect(three.map((l) => l.exerciseId).sort()).toEqual([
+      'back-squat',
+      'bench',
+      'deadlift',
+      'ohp',
+    ])
+    const dayOf = (id: string) => three.find((l) => l.exerciseId === id)?.slot
+    expect(dayOf('deadlift')).not.toBe(dayOf('back-squat'))
+    expect(dayOf('ohp')).toBe(dayOf('bench'))
+    expect(dayOf('ohp')).not.toBe(dayOf('deadlift'))
+    expect(dayOf('ohp')).not.toBe(dayOf('back-squat'))
   })
 
-  it('keeps squat and deadlift at two days', () => {
+  it('pairs a press with each lower lift at two days', () => {
     const two = liftsForDayCount(2, DEFAULT_LIFTS)
-    expect(two.map((l) => l.exerciseId).sort()).toEqual(['back-squat', 'deadlift'])
+    expect(two).toHaveLength(4)
+    expect(new Set(two.map((l) => l.slot))).toEqual(new Set(['A', 'B']))
+    // Each day gets one lower lift and one press, not both squats together.
+    for (const slot of ['A', 'B'] as const) {
+      const day = two.filter((l) => l.slot === slot)
+      expect(day).toHaveLength(2)
+      expect(day.filter((l) => l.category === 'lower')).toHaveLength(1)
+    }
+  })
+
+  it('re-letters days so they never have gaps', () => {
+    const moved = liftsForDayCount(4, DEFAULT_LIFTS).map((lift) =>
+      lift.slot === 'B' ? { ...lift, slot: 'D' as const } : lift,
+    )
+    const days = normalizeLiftDays(moved).map((l) => l.slot)
+    expect(new Set(days)).toEqual(new Set(['A', 'B', 'C']))
+    // The lift moved onto an occupied day stays grouped with the one there.
+    const onC = normalizeLiftDays(moved).filter((l) => l.slot === 'C')
+    expect(onC.map((l) => l.exerciseId)).toEqual(['deadlift', 'back-squat'])
   })
 
   it('leaves four days exactly as they were', () => {

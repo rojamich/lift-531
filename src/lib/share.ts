@@ -36,8 +36,7 @@ export function sessionToText(
   if (options.heading !== false) {
     lines.push(`${cycle.name} · Week ${view.week} · Day ${view.slot} — ${view.liftLabel}`)
   }
-  lines.push(`${view.weekLabel} · TM ${formatNumber(view.trainingMax)} ${unit} · ${stateLabel(view)}`)
-  if (view.swappedTo) lines.push(`Swapped to ${view.swappedTo}`)
+  lines.push(`${view.weekLabel} · ${stateLabel(view)}`)
   lines.push('')
 
   if (view.state === 'skipped') {
@@ -45,34 +44,42 @@ export function sessionToText(
     return lines.join('\n')
   }
 
-  for (const row of [...view.warmups, ...view.main]) {
-    const star = row.beatTarget ? '  ★' : ''
-    const capped = !row.done && row.capped ? '  (capped — extra reps)' : ''
-    const pending = !row.done && view.anythingLogged ? '  (not done)' : ''
+  /* A day can pair two main lifts, so each gets its own block of lines. */
+  for (const lift of view.lifts) {
+    if (view.lifts.length > 1) lines.push(`${lift.label}`)
     lines.push(
-      `${pad(row.label, 10)} ${pad(weightLabel(row.weight, unit, row.perHand), 16)} × ${repsLabel(row)}${star}${capped}${pending}`,
+      `${view.lifts.length > 1 ? '  ' : ''}TM ${formatNumber(lift.trainingMax)} ${unit}${lift.swappedTo ? ` · swapped to ${lift.swappedTo}` : ''}`,
     )
-  }
 
-  if (view.supplemental.length > 0) {
-    lines.push('')
-    lines.push(view.supplementalLabel)
-    if (view.supplementalSummary) {
-      const { weight, reps, of } = view.supplementalSummary
-      const partial = reps.length < of ? `  (${reps.length} of ${of} sets)` : ''
+    for (const row of [...lift.warmups, ...lift.main]) {
+      const star = row.beatTarget ? '  ★' : ''
+      const capped = !row.done && row.capped ? '  (capped — extra reps)' : ''
+      const pending = !row.done && view.anythingLogged ? '  (not done)' : ''
       lines.push(
-        `${pad('', 10)} ${pad(weightLabel(weight, unit, view.supplemental[0].perHand), 16)} × ${reps.join('/')}${partial}`,
-      )
-    } else {
-      const first = view.supplemental[0]
-      lines.push(
-        `${pad('', 10)} ${pad(weightLabel(first.weight, unit, first.perHand), 16)} × ${repsLabel(first)} × ${view.supplemental.length} sets`,
+        `${pad(row.label, 10)} ${pad(weightLabel(row.weight, unit, row.perHand), 16)} × ${repsLabel(row)}${star}${capped}${pending}`,
       )
     }
+
+    if (lift.supplemental.length > 0) {
+      lines.push('')
+      lines.push(lift.supplementalLabel)
+      if (lift.supplementalSummary) {
+        const { weight, reps, of } = lift.supplementalSummary
+        const partial = reps.length < of ? `  (${reps.length} of ${of} sets)` : ''
+        lines.push(
+          `${pad('', 10)} ${pad(weightLabel(weight, unit, lift.supplemental[0].perHand), 16)} × ${reps.join('/')}${partial}`,
+        )
+      } else {
+        const first = lift.supplemental[0]
+        lines.push(
+          `${pad('', 10)} ${pad(weightLabel(first.weight, unit, first.perHand), 16)} × ${repsLabel(first)} × ${lift.supplemental.length} sets`,
+        )
+      }
+    }
+    lines.push('')
   }
 
   if (view.accessories.length > 0) {
-    lines.push('')
     lines.push('Accessories')
     for (const row of view.accessories) {
       if (row.skipped) {

@@ -18,7 +18,7 @@ import {
   today,
 } from '../lib/cycle'
 import { proposeAccessoryChanges, type AccessoryBump } from '../lib/progression'
-import { createProfile, DEFAULT_SETTINGS, type SeedKind } from '../lib/defaults'
+import { createProfile, DEFAULT_SETTINGS, normalizeLiftDays, type SeedKind } from '../lib/defaults'
 import { getExercise } from '../lib/exercises'
 import { findTemplate } from '../lib/templates'
 import { DAY_SLOTS } from '../lib/types'
@@ -85,7 +85,7 @@ interface AppState {
   patchAccessorySet: (key: string, planId: string, index: number, patch: Partial<LoggedAccessorySet>) => void
   setAccessorySkipped: (key: string, planId: string, skipped: boolean) => void
   swapAccessoryExercise: (key: string, planId: string, exerciseId: string, weightKg: number | null) => void
-  swapMainExercise: (key: string, exerciseId: string) => void
+  swapMainExercise: (key: string, exerciseId: string, ordinal?: number) => void
   setSessionNotes: (key: string, notes: string) => void
   /** Returns proposed accessory increases for confirmation; nothing is written yet. */
   completeSession: (key: string) => AccessoryBump[]
@@ -95,7 +95,8 @@ interface AppState {
   reopenSession: (key: string) => void
   skipSession: (key: string) => void
   scheduleSession: (key: string, date: string | undefined) => void
-  finishCycle: (trainingMaxesKg: Partial<Record<DaySlot, number>>, options?: { template?: Template; accessoryPlan?: Record<DaySlot, PlannedAccessory[]> }) => void
+  /** `trainingMaxesKg` is keyed by `liftKey`, so combined days keep both maxes. */
+  finishCycle: (trainingMaxesKg: Record<string, number>, options?: { template?: Template; accessoryPlan?: Record<DaySlot, PlannedAccessory[]> }) => void
 }
 
 const activeCycleOf = (state: { profile: Profile | null; cycles: Cycle[] }): Cycle | null => {
@@ -384,7 +385,9 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setLifts(lifts) {
-      mutateProfile((profile) => ({ ...profile, lifts }))
+      // Normalised here so no screen has to care: days stay contiguous and a
+      // day's lifts stay grouped however they were moved around.
+      mutateProfile((profile) => ({ ...profile, lifts: normalizeLiftDays(lifts) }))
     },
 
     setAccessoryPlan(slot, items) {
@@ -512,19 +515,36 @@ export const useApp = create<AppState>((set, get) => {
       }))
     },
 
-    swapMainExercise(key, exerciseId) {
+    swapMainExercise(key, exerciseId, ordinal = 0) {
       const state = get()
       const profile = state.profile
       const cycle = activeCycleOf(state)
       if (!profile || !cycle) return
       pushUndo(`swapped to ${getExercise(exerciseId, profile.customExercises).name}`)
       mutateSession(key, (session) => {
-        const planned = cycle.lifts.find((l) => l.slot === session.slot)?.exerciseId
-        const trainingMaxKg = substituteTrainingMaxKg(cycle, session.slot, exerciseId, profile.settings)
+        const planned = cycle.lifts.filter((l) => l.slot === session.slot)[ordinal]?.exerciseId
+        const swaps = { ...(session.mainSwaps ?? {}) }
+        if (exerciseId === planned) {
+          delete swaps[ordinal]
+        } else {
+          swaps[ordinal] = {
+            exerciseId,
+            trainingMaxKg: substituteTrainingMaxKg(
+              cycle,
+              session.slot,
+              exerciseId,
+              profile.settings,
+              ordinal,
+            ),
+          }
+        }
         const next: Session = {
           ...session,
-          mainExerciseId: exerciseId === planned ? undefined : exerciseId,
-          mainTrainingMaxKg: trainingMaxKg,
+          mainSwaps: swaps,
+          // The legacy single-lift fields are folded into the map above; leaving
+          // them set would shadow a later un-swap of the first lift.
+          mainExerciseId: undefined,
+          mainTrainingMaxKg: undefined,
           // The old sets were built against the old weight; start them over.
           mainSets: [],
           supplementalSets: [],

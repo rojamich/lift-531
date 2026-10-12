@@ -1,7 +1,14 @@
 import { useWeight } from '../components/hooks'
 import { cx } from '../components/ui'
 import { cycleSlots } from '../lib/cycle'
-import { buildSessionView, stateLabel, type AccessoryRow, type SetRow, type SessionView } from '../lib/sessionView'
+import {
+  buildSessionView,
+  stateLabel,
+  type AccessoryRow,
+  type LiftView,
+  type SetRow,
+  type SessionView,
+} from '../lib/sessionView'
 import { WEEK_NUMBERS, type Cycle, type Profile } from '../lib/types'
 import { formatNumber } from '../lib/units'
 
@@ -60,16 +67,58 @@ function AccessoryLine({ row, unit }: { row: AccessoryRow; unit: string }) {
   )
 }
 
+function LiftLines({ lift, named, unit }: { lift: LiftView; named: boolean; unit: string }) {
+  return (
+    <div className="mt-1">
+      {/* On a combined day each lift needs its own name and training max. */}
+      {named ? (
+        <p className="tabular text-xs font-semibold">
+          {lift.label}
+          {lift.swappedTo ? <span className="font-normal"> as {lift.swappedTo}</span> : null}
+          <span className="font-normal text-ink-400">
+            {' '}
+            · TM {formatNumber(lift.trainingMax)} {unit}
+          </span>
+        </p>
+      ) : null}
+
+      <table className="w-full text-xs">
+        <tbody>
+          {[...lift.warmups, ...lift.main].map((row) => (
+            <SetLine key={row.label} row={row} unit={unit} />
+          ))}
+        </tbody>
+      </table>
+
+      {lift.supplemental.length > 0 ? (
+        <p className="tabular mt-1 text-xs">
+          <span className="font-semibold">{lift.supplementalLabel.split('·')[0].trim()}:</span>{' '}
+          {lift.supplementalSummary
+            ? `${num(lift.supplementalSummary.weight, unit, lift.supplemental[0].perHand)} × ${lift.supplementalSummary.reps.join(' / ')}` +
+              (lift.supplementalSummary.reps.length < lift.supplementalSummary.of
+                ? ` (${lift.supplementalSummary.reps.length} of ${lift.supplementalSummary.of})`
+                : ' ✓')
+            : `${num(lift.supplemental[0].weight, unit, lift.supplemental[0].perHand)} × ${lift.supplemental[0].reps} × ${lift.supplemental.length} sets — planned`}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 function DayBlock({ view, unit }: { view: SessionView; unit: string }) {
+  const combined = view.lifts.length > 1
   return (
     <section className="print-page mb-3 break-inside-avoid border-t border-ink-700 pt-2">
       <h3 className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold">
         <span>
           Day {view.slot} — {view.liftLabel}
         </span>
-        {view.swappedTo ? <span className="text-xs font-normal">as {view.swappedTo}</span> : null}
+        {!combined && view.lifts[0].swappedTo ? (
+          <span className="text-xs font-normal">as {view.lifts[0].swappedTo}</span>
+        ) : null}
         <span className="tabular text-xs font-normal text-ink-400">
-          TM {formatNumber(view.trainingMax)} {unit} · {stateLabel(view)}
+          {combined ? '' : `TM ${formatNumber(view.lifts[0].trainingMax)} ${unit} · `}
+          {stateLabel(view)}
         </span>
       </h3>
 
@@ -77,25 +126,9 @@ function DayBlock({ view, unit }: { view: SessionView; unit: string }) {
         <p className="mt-1 text-xs text-ink-400">Not trained.</p>
       ) : (
         <>
-          <table className="mt-1 w-full text-xs">
-            <tbody>
-              {[...view.warmups, ...view.main].map((row) => (
-                <SetLine key={row.label} row={row} unit={unit} />
-              ))}
-            </tbody>
-          </table>
-
-          {view.supplemental.length > 0 ? (
-            <p className="tabular mt-1 text-xs">
-              <span className="font-semibold">{view.supplementalLabel.split('·')[0].trim()}:</span>{' '}
-              {view.supplementalSummary
-                ? `${num(view.supplementalSummary.weight, unit, view.supplemental[0].perHand)} × ${view.supplementalSummary.reps.join(' / ')}` +
-                  (view.supplementalSummary.reps.length < view.supplementalSummary.of
-                    ? ` (${view.supplementalSummary.reps.length} of ${view.supplementalSummary.of})`
-                    : ' ✓')
-                : `${num(view.supplemental[0].weight, unit, view.supplemental[0].perHand)} × ${view.supplemental[0].reps} × ${view.supplemental.length} sets — planned`}
-            </p>
-          ) : null}
+          {view.lifts.map((lift) => (
+            <LiftLines key={lift.ordinal} lift={lift} named={combined} unit={unit} />
+          ))}
 
           {view.accessories.length > 0 ? (
             <table className="mt-1.5 w-full text-xs">
@@ -140,7 +173,7 @@ export function CyclePrint({ cycle, profile }: { cycle: Cycle; profile: Profile 
         </p>
         <p className="tabular mt-1 flex flex-wrap gap-x-3 text-xs">
           {cycle.lifts.map((lift) => (
-            <span key={lift.slot}>
+            <span key={`${lift.slot}-${lift.exerciseId}`}>
               <span className="text-ink-400">{lift.slot}</span>{' '}
               {lift.label ?? lift.exerciseId}{' '}
               <span className="font-semibold">{weight.full(lift.trainingMaxKg)}</span>

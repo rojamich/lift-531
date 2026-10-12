@@ -12,10 +12,15 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   configurable percentage (85% by default), rounded to whatever you can load.
 - **Two, three or four training days.** Set it under Lifts and the next cycle is
   built around that many days — a three-day cycle is twelve sessions, not
-  sixteen, and the month grid, report and share all follow. Fewer days means
-  fewer main lifts, the presses dropping first. Training all four lifts *less
-  often* needs no setting at all: a cycle is sixteen sessions in whatever order
-  you reach them, so twice a week just makes a cycle take eight weeks.
+  sixteen, and the month grid, report and share all follow. Fewer days *combines*
+  lifts rather than dropping them: at three days the two presses share a day
+  while squat and deadlift keep their own, and at two each day pairs a press
+  with a lower lift. Any lift can be moved to any day, so a layout can be part
+  combined and part separate, and a day that holds two main lifts runs them as
+  two blocks — each with its own training max, warm-ups, supplemental work, rep
+  record and equipment swap. Training all four lifts *less often* needs no
+  setting at all: a cycle is sixteen sessions in whatever order you reach them,
+  so twice a week just makes a cycle take eight weeks.
 - **Any 5/3/1 variant.** FSL 5×5, FSL AMRAP, SSL, BBB (flat or ramping), BBS,
   Widowmaker, 5's PRO, or main work only. Every week percentage, rep target,
   warm-up and supplemental setting is editable, and edits save as your own
@@ -42,9 +47,11 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   you're actually loading, with per-implement increments and a plate calculator.
 - **Planning and sharing.** The whole four-week cycle on one screen, a print view
   for PDF or the fridge, and one-tap text export of a day, a week or a cycle.
-  A share reports what was actually lifted wherever it was logged and the plan
-  for anything still ahead, so a finished day goes out as a record and an
-  upcoming one as a plan.
+  Both the share and the printout report what was actually lifted wherever it was
+  logged and the plan for anything still ahead, so a finished day goes out as a
+  record and an upcoming one as a plan. The printout carries no meaning in
+  colour — ✓ for a set completed, ★ for a rep record beaten, "planned" for
+  anything not trained — so it survives a photocopier or a phone photo.
 - **Every past cycle, still there.** The Cycle screen's title is a picker: open
   any cycle you have run to see its month grid, its report, and what you
   actually did on any day of it.

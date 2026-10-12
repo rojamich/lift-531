@@ -141,16 +141,21 @@ export function Pill({
   children,
   onClick,
   className,
+  ariaLabel,
 }: {
   active?: boolean
   children: ReactNode
   onClick?: () => void
   className?: string
+  /** Spoken name, for when the visible text alone is ambiguous. */
+  ariaLabel?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-label={ariaLabel}
+      aria-pressed={active}
       className={cx(
         'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
         active

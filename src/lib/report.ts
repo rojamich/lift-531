@@ -1,6 +1,6 @@
 import { estimateOneRepMax } from './engine'
 import { getExercise } from './exercises'
-import { mainExerciseId } from './cycle'
+import { liftOrdinal, mainExerciseIdAt, ordinalOfSet } from './cycle'
 import { bestAmrap } from './progression'
 import type {
   Cycle,
@@ -46,6 +46,8 @@ export interface ExerciseTotals {
 
 export interface LiftHighlight {
   slot: DaySlot
+  /** Position within its day, so two lifts sharing a day stay distinct. */
+  ordinal: number
   label: string
   trainingMaxKg: number
   best: { weightKg: number; reps: number; week: number; targetReps: number } | null
@@ -118,7 +120,10 @@ export function buildCycleReport(cycle: Cycle, custom: Exercise[] = []): CycleRe
   let sessionsCompleted = 0
   let sessionsSkipped = 0
   const dates: string[] = []
-  const volumeBySlot = new Map<DaySlot, number>()
+  /* Keyed by day and lift, so a combined day's volume splits between its lifts
+     instead of being counted once for each of them. */
+  const volumeByLift = new Map<string, number>()
+  const liftKey = (slot: DaySlot, ordinal: number) => `${slot}:${ordinal}`
 
   const sessions = Object.values(cycle.sessions) as Session[]
   for (const session of sessions) {
@@ -127,18 +132,23 @@ export function buildCycleReport(cycle: Cycle, custom: Exercise[] = []): CycleRe
     sessionsCompleted += 1
     if (session.completedDate) dates.push(session.completedDate)
 
-    const mainExercise = getExercise(mainExerciseId(cycle, session), custom)
-    let slotVolume = 0
+    /* A day can hold more than one main lift, so each set is credited to the
+       lift its id names rather than to whichever lift came first. */
+    const mainExerciseFor = (ordinal: number) =>
+      getExercise(mainExerciseIdAt(cycle, session, ordinal), custom)
 
     for (const set of [...session.mainSets, ...session.supplementalSets]) {
       if (!mainLogged(set)) continue
+      const ordinal = ordinalOfSet(set.id)
+      const mainExercise = mainExerciseFor(ordinal)
       const reps = set.actualReps as number
       totalSets += 1
       totalReps += reps
       const volume =
         set.actualWeightKg === null ? 0 : set.actualWeightKg * reps * (mainExercise.perHand ? 2 : 1)
       totalVolumeKg += volume
-      slotVolume += volume
+      const key = liftKey(session.slot, ordinal)
+      volumeByLift.set(key, (volumeByLift.get(key) ?? 0) + volume)
       if (set.amrap) repsPastTarget += Math.max(0, reps - set.targetReps)
       accumulate(totals, mainExercise, set.actualWeightKg, reps)
     }
@@ -156,20 +166,20 @@ export function buildCycleReport(cycle: Cycle, custom: Exercise[] = []): CycleRe
         accumulate(totals, exercise, set.weightKg, reps)
       }
     }
-
-    volumeBySlot.set(session.slot, (volumeBySlot.get(session.slot) ?? 0) + slotVolume)
   }
 
   const lifts: LiftHighlight[] = cycle.lifts.map((lift) => {
-    const best = bestAmrap(cycle, lift.slot)
+    const ordinal = liftOrdinal(cycle, lift)
+    const best = bestAmrap(cycle, lift.slot, ordinal)
     return {
       slot: lift.slot,
+      ordinal,
       label: lift.label ?? getExercise(lift.exerciseId, custom).name,
       trainingMaxKg: lift.trainingMaxKg,
       best: best ? { weightKg: best.weightKg, reps: best.reps, week: best.week, targetReps: best.targetReps } : null,
       estimatedOneRepMaxKg: best ? estimateOneRepMax(best.weightKg, best.reps) : null,
       surplus: best ? best.surplus : null,
-      volumeKg: volumeBySlot.get(lift.slot) ?? 0,
+      volumeKg: volumeByLift.get(liftKey(lift.slot, ordinal)) ?? 0,
     }
   })
 

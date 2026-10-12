@@ -214,12 +214,20 @@ export interface Session {
   status: SessionStatus
   scheduledDate?: string
   completedDate?: string
-  /** Set when the day was run on a substitute movement (travel, busy rack). */
-  mainExerciseId?: string
   /**
-   * Training max for the substitute, converted from the planned lift's. Without
-   * this a barbell max would be applied per hand to a pair of dumbbells.
+   * Substitutions for this day's main lifts, keyed by the lift's position within
+   * the day. The training max is carried alongside, converted from the planned
+   * lift's — without it a barbell max would be applied per hand to a pair of
+   * dumbbells.
    */
+  mainSwaps?: Record<number, { exerciseId: string; trainingMaxKg?: number }>
+  /**
+   * Pre-existing single-lift swap fields. Still read, so sessions logged before
+   * a day could hold more than one main lift keep their substitution.
+   * @deprecated use mainSwaps
+   */
+  mainExerciseId?: string
+  /** @deprecated use mainSwaps */
   mainTrainingMaxKg?: number
   mainSets: LoggedSet[]
   supplementalSets: LoggedSet[]

@@ -1,3 +1,4 @@
+import { liftKey, liftOrdinal, setBelongsTo } from './cycle'
 import { estimateOneRepMax, incrementFor, type EquipmentContext } from './engine'
 import { getExercise } from './exercises'
 import type {
@@ -27,6 +28,10 @@ export interface AmrapResult {
 
 export interface LiftReview {
   slot: DaySlot
+  /** Position within its day: a combined day has an ordinal 0 and an ordinal 1. */
+  ordinal: number
+  /** `liftKey(slot, ordinal)` — what the next cycle's maxes are keyed by. */
+  key: string
   exerciseId: string
   label: string
   currentTrainingMaxKg: number
@@ -43,14 +48,19 @@ export interface LiftReview {
 
 const unitPair = (pair: { lb: number; kg: number }, unit: 'lb' | 'kg') => (unit === 'kg' ? pair.kg : pair.lb)
 
-/** The heaviest AMRAP set logged for a lift across the cycle. */
-export function bestAmrap(cycle: Cycle, slot: DaySlot): AmrapResult | null {
+/**
+ * The heaviest AMRAP set logged for one of a day's main lifts, across the cycle.
+ * `ordinal` picks which lift on a combined day; both lifts' sets live in the
+ * same list, told apart by their set ids.
+ */
+export function bestAmrap(cycle: Cycle, slot: DaySlot, ordinal = 0): AmrapResult | null {
   let best: AmrapResult | null = null
   for (const week of [1, 2, 3] as WeekNumber[]) {
     const session = cycle.sessions[`w${week}${slot}`]
     if (!session || session.status !== 'complete') continue
     for (const set of session.mainSets) {
       if (!set.amrap || !set.done) continue
+      if (!setBelongsTo(set.id, ordinal)) continue
       if (set.actualWeightKg === null || set.actualReps === null) continue
       const candidate: AmrapResult = {
         week,
@@ -67,11 +77,12 @@ export function bestAmrap(cycle: Cycle, slot: DaySlot): AmrapResult | null {
 }
 
 /** Did the lifter miss the prescribed reps on any completed AMRAP set? */
-function missedAnyAmrap(cycle: Cycle, slot: DaySlot): boolean {
+function missedAnyAmrap(cycle: Cycle, slot: DaySlot, ordinal = 0): boolean {
   for (const week of [1, 2, 3] as WeekNumber[]) {
     const session = cycle.sessions[`w${week}${slot}`]
     if (!session || session.status !== 'complete') continue
     for (const set of session.mainSets) {
+      if (!setBelongsTo(set.id, ordinal)) continue
       if (set.amrap && set.done && set.actualReps !== null && set.actualReps < set.targetReps) return true
     }
   }
@@ -82,8 +93,9 @@ export function reviewLift(cycle: Cycle, lift: CycleLift, settings: Settings, ct
   const exercise = getExercise(lift.exerciseId)
   const increment = incrementFor(exercise.equipment, ctx)
   const label = lift.label ?? exercise.name
-  const best = bestAmrap(cycle, lift.slot)
-  const missed = missedAnyAmrap(cycle, lift.slot)
+  const ordinal = liftOrdinal(cycle, lift)
+  const best = bestAmrap(cycle, lift.slot, ordinal)
+  const missed = missedAnyAmrap(cycle, lift.slot, ordinal)
 
   const bumpDisplay = unitPair(
     lift.category === 'upper' ? settings.upperCycleIncrement : settings.lowerCycleIncrement,
@@ -122,6 +134,8 @@ export function reviewLift(cycle: Cycle, lift: CycleLift, settings: Settings, ct
 
   return {
     slot: lift.slot,
+    ordinal,
+    key: liftKey(lift.slot, ordinal),
     exerciseId: lift.exerciseId,
     label,
     currentTrainingMaxKg: lift.trainingMaxKg,

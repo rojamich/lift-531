@@ -2,155 +2,15 @@ import { useMemo, useState } from 'react'
 import { ExerciseSwap } from '../components/ExerciseSwap'
 import { useToast, useWakeLock, useWeight } from '../components/hooks'
 import { RestTimerBar, useRestTimer, formatClock } from '../components/RestTimer'
-import { Button, Card, Empty, Input, NumberField, SectionTitle, Sheet, Toast, cx } from '../components/ui'
-import { contextFor, liftFor, mainExerciseId, prescriptionFor } from '../lib/cycle'
+import { Button, Card, Empty, Input, SectionTitle, Sheet, Toast, cx } from '../components/ui'
+import { contextFor, liftsFor, prescriptionsFor } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
-import { bestAmrap, findLastAccessory, repGoal, suggestAccessory } from '../lib/progression'
+import { findLastAccessory, repGoal, suggestAccessory } from '../lib/progression'
 import { sessionToText, shareText } from '../lib/share'
-import type { Cycle, LoggedAccessory, LoggedSet, PlannedAccessory, Profile, Session } from '../lib/types'
-import { describePlates, platesFor } from '../lib/units'
+import type { Cycle, LoggedAccessory, PlannedAccessory, Profile, Session } from '../lib/types'
 import { useApp } from '../state/useApp'
-
-function NumberCell({
-  value,
-  onChange,
-  suffix,
-  placeholder,
-  emphasis,
-  ariaLabel,
-}: {
-  value: number | null
-  onChange: (next: number | null) => void
-  suffix?: string
-  placeholder?: string
-  emphasis?: boolean
-  ariaLabel: string
-}) {
-  return (
-    <span className="inline-flex items-baseline gap-1">
-      <NumberField
-        ariaLabel={ariaLabel}
-        value={value}
-        placeholder={placeholder}
-        onChange={onChange}
-        // Two decimals is plenty for a half-pound plate, and only applies once
-        // the field loses focus.
-        format={(n) => Math.round(n * 100) / 100}
-        className={cx(
-          'tabular w-[5ch] rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right outline-none transition',
-          'focus:border-brand-500 focus:bg-ink-900 focus:ring-2 focus:ring-brand-500/25',
-          emphasis ? 'text-2xl font-bold' : 'text-base font-semibold',
-        )}
-      />
-      {suffix ? <span className="text-xs text-ink-400">{suffix}</span> : null}
-    </span>
-  )
-}
-
-function SetRow({
-  set,
-  label,
-  restSeconds,
-  perHand,
-  showPlates,
-  barWeight,
-  onPatch,
-  onDone,
-}: {
-  set: LoggedSet
-  label: string
-  restSeconds: number
-  perHand: boolean
-  showPlates: boolean
-  barWeight: number
-  onPatch: (patch: Partial<LoggedSet>) => void
-  onDone: (rest: number) => void
-}) {
-  const weight = useWeight()
-  const display = weight.show(set.actualWeightKg)
-  const isWarmup = set.kind === 'warmup'
-
-  const toggle = () => {
-    const next = !set.done
-    onPatch({
-      done: next,
-      actualReps: next ? set.actualReps ?? set.targetReps : set.actualReps,
-    })
-    if (next) onDone(restSeconds)
-  }
-
-  const plates =
-    showPlates && !perHand && display !== null && display > barWeight
-      ? describePlates(platesFor(display, weight.unit, barWeight))
-      : null
-
-  return (
-    <div
-      className={cx(
-        'rounded-xl border px-3 py-2.5 transition',
-        set.done
-          ? 'border-brand-600/50 bg-brand-500/10'
-          : set.amrap
-            ? 'border-flame-500/50 bg-flame-500/5'
-            : 'border-ink-700 bg-ink-800/50',
-      )}
-    >
-      <div className="flex items-center gap-3">
-      <button
-        type="button"
-        onClick={toggle}
-        aria-label={set.done ? `Mark ${label} not done` : `Mark ${label} done`}
-        aria-pressed={set.done}
-        className={cx(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold transition',
-          set.done ? 'border-brand-500 bg-brand-500 text-ink-950' : 'border-ink-600 text-transparent hover:border-ink-400',
-        )}
-      >
-        ✓
-      </button>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1">
-          {display === null ? (
-            <span className="text-xl font-bold">Bodyweight</span>
-          ) : (
-            <NumberCell
-              ariaLabel={`${label} weight`}
-              value={Math.round(display * 100) / 100}
-              onChange={(next) => onPatch({ actualWeightKg: next === null ? null : weight.toKg(next) })}
-              suffix={perHand ? `${weight.unit}/hand` : weight.unit}
-              emphasis={!isWarmup}
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-2 whitespace-nowrap text-xs text-ink-400">
-          <span className="font-medium uppercase tracking-wide">{label}</span>
-          <span>{Math.round(set.pct * 100)}%</span>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-baseline gap-1">
-        <span className="text-ink-400">×</span>
-        <NumberCell
-          ariaLabel={`${label} reps`}
-          value={set.actualReps}
-          placeholder={String(set.targetReps)}
-          onChange={(next) => onPatch({ actualReps: next })}
-          emphasis={set.amrap}
-        />
-        <span className={cx('text-xs', set.amrap ? 'font-bold text-flame-400' : 'text-ink-400')}>
-          /{set.targetReps}
-          {set.amrap ? '+' : ''}
-        </span>
-      </div>
-      </div>
-
-      {plates ? (
-        <div className="tabular mt-1.5 pl-[52px] text-[11px] text-ink-400">{plates}</div>
-      ) : null}
-    </div>
-  )
-}
+import { MainLiftBlock } from './MainLiftBlock'
+import { NumberCell } from './SetRow'
 
 function AccessoryCard({
   accessory,
@@ -338,7 +198,6 @@ function AccessoryCard({
 export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Session }) {
   const profile = useApp((s) => s.profile)
   const cycles = useApp((s) => s.cycles)
-  const patchSet = useApp((s) => s.patchSet)
   const completeSession = useApp((s) => s.completeSession)
   const skipSession = useApp((s) => s.skipSession)
   const setSessionNotes = useApp((s) => s.setSessionNotes)
@@ -349,47 +208,38 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
 
   const weight = useWeight()
   const toast = useToast()
-  const [swapping, setSwapping] = useState(false)
-  const [showWarmups, setShowWarmups] = useState(false)
+  /*
+   * Which of the day's main lifts has its swap sheet open. One sheet serves
+   * every block, so a combined day can't somehow have two open at once.
+   */
+  const [swapOrdinal, setSwapOrdinal] = useState<number | null>(null)
   const [finishing, setFinishing] = useState(false)
 
   const timer = useRestTimer(profile?.settings.restTimerEnabled ?? true)
   useWakeLock(session.status === 'in-progress')
 
-  const prescription = useMemo(
-    () => (profile ? prescriptionFor(cycle, session, profile.settings) : null),
+  const blocks = useMemo(
+    () => (profile ? prescriptionsFor(cycle, session, profile.settings) : []),
     [cycle, session, profile],
   )
 
-  const previousBest = useMemo(() => {
-    const older = cycles.filter((c) => c.id !== cycle.id)
-    for (const c of [...older].reverse()) {
-      const best = bestAmrap(c, session.slot)
-      if (best) return { best, cycle: c }
-    }
-    return null
-  }, [cycles, cycle.id, session.slot])
+  if (!profile || blocks.length === 0) return null
 
-  if (!profile || !prescription) return null
-
-  const lift = liftFor(cycle, session.slot)
-  const exercise = getExercise(mainExerciseId(cycle, session), profile.customExercises)
+  const lifts = liftsFor(cycle, session.slot)
+  /* A day can pair lifts — press with deadlift, say — so nothing here assumes one. */
+  const combined = blocks.length > 1
   const weekSpec = cycle.template.weeks[session.week - 1]
-  const restMap = new Map(
-    [...prescription.warmups, ...prescription.main, ...prescription.supplemental].map((s) => [s.id, s.restSeconds]),
-  )
-  const cappedMap = new Map(
-    [...prescription.warmups, ...prescription.main, ...prescription.supplemental].map((s) => [s.id, s]),
-  )
 
-  const warmups = session.mainSets.filter((s) => s.kind === 'warmup')
-  const mainSets = session.mainSets.filter((s) => s.kind === 'main')
   const allSets = [...session.mainSets, ...session.supplementalSets]
   const doneCount = allSets.filter((s) => s.done).length
   const accessorySets = session.accessories.filter((a) => !a.skipped).flatMap((a) => a.sets)
   const totalCount = allSets.length + accessorySets.length
   const doneTotal = doneCount + accessorySets.filter((s) => s.done).length
-  const anyCapped = [...prescription.main, ...prescription.supplemental].some((s) => s.capped)
+  const anyCapped = blocks.some((block) =>
+    [...block.prescription.main, ...block.prescription.supplemental].some((s) => s.capped),
+  )
+
+  const swapBlock = swapOrdinal === null ? null : blocks[swapOrdinal]
 
   const planItems = cycle.accessoryPlan[session.slot] ?? []
   const planById = new Map(planItems.map((item) => [item.id, item]))
@@ -411,10 +261,21 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
   }
 
   const share = async () => {
-    const result = await shareText(`${cycle.name} · Week ${session.week} Day ${session.slot}`, sessionToText(cycle, session, profile.settings))
+    const result = await shareText(
+      `${cycle.name} · Week ${session.week} Day ${session.slot}`,
+      sessionToText(cycle, session, profile.settings),
+    )
     if (result === 'copied') toast.show('Workout copied to clipboard')
     if (result === 'failed') toast.show('Could not share — try again')
   }
+
+  const title = combined
+    ? blocks.map((block, index) => lifts[index]?.label ?? block.exercise.name).join(' + ')
+    : (lifts[0]?.label ?? blocks[0].exercise.name)
+  const swappedName =
+    !combined && blocks[0].lift && blocks[0].exercise.id !== blocks[0].lift.exerciseId
+      ? blocks[0].exercise.name
+      : null
 
   return (
     <div className="pb-40">
@@ -430,23 +291,35 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
                 Week {session.week} · Day {session.slot}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setSwapping(true)}
-              className="mt-0.5 block truncate text-2xl font-bold leading-tight hover:text-brand-400"
-            >
-              {lift?.label ?? exercise.name}
-              {session.mainExerciseId && session.mainExerciseId !== lift?.exerciseId ? (
-                <span className="ml-2 align-middle text-xs font-medium text-flame-400">
-                  → {exercise.name}
-                </span>
-              ) : null}
-            </button>
+            {/* On a combined day each lift carries its own swap, so the day's
+                name is a label rather than a control. */}
+            {combined ? (
+              <h1 className="mt-0.5 text-2xl font-bold leading-tight">{title}</h1>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSwapOrdinal(0)}
+                className="mt-0.5 block truncate text-2xl font-bold leading-tight hover:text-brand-400"
+              >
+                {title}
+                {swappedName ? (
+                  <span className="ml-2 align-middle text-xs font-medium text-flame-400">
+                    → {swappedName}
+                  </span>
+                ) : null}
+              </button>
+            )}
             <div className="text-sm text-ink-400">
-              {weekSpec.label} · TM{' '}
-              <span className="tabular text-ink-300">
-                {prescription.trainingMax} {weight.unit}
-              </span>
+              {weekSpec.label}
+              {combined ? null : (
+                <>
+                  {' '}
+                  · TM{' '}
+                  <span className="tabular text-ink-300">
+                    {blocks[0].prescription.trainingMax} {weight.unit}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -479,97 +352,26 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
       {anyCapped ? (
         <div className="mb-4 rounded-xl border border-flame-500/40 bg-flame-500/10 px-3 py-2.5 text-sm">
           <span className="font-semibold text-flame-400">Capped at your heaviest dumbbell.</span>{' '}
-          <span className="text-ink-300">Rep targets were raised to match the load you're missing.</span>
+          <span className="text-ink-300">
+            Rep targets were raised to match the load you're missing.
+          </span>
         </div>
       ) : null}
 
-      {warmups.length > 0 ? (
-        <section className="mb-5">
-          <button
-            type="button"
-            onClick={() => setShowWarmups((v) => !v)}
-            className="mb-2 flex w-full items-center justify-between text-xs font-semibold uppercase tracking-[0.14em] text-ink-400"
-          >
-            <span>Warm-up · {warmups.filter((s) => s.done).length}/{warmups.length}</span>
-            <span>{showWarmups ? 'hide' : 'show'}</span>
-          </button>
-          {showWarmups ? (
-            <div className="space-y-1.5">
-              {warmups.map((set) => (
-                <SetRow
-                  key={set.id}
-                  set={set}
-                  label={cappedMap.get(set.id)?.label ?? 'Warm-up'}
-                  perHand={Boolean(exercise.perHand)}
-                  showPlates={profile.settings.showPlateMath}
-                  barWeight={weight.unit === 'kg' ? profile.settings.barWeight.kg : profile.settings.barWeight.lb}
-                  restSeconds={restMap.get(set.id) ?? 60}
-                  onPatch={(patch) => patchSet(session.key, set.id, patch)}
-                  onDone={onRest}
-                />
-              ))}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="mb-5">
-        <SectionTitle>Main work · {weekSpec.label}</SectionTitle>
-        <div className="space-y-1.5">
-          {mainSets.map((set) => (
-            <div key={set.id}>
-              <SetRow
-                set={set}
-                label={cappedMap.get(set.id)?.label ?? 'Set'}
-                perHand={Boolean(exercise.perHand)}
-                showPlates={profile.settings.showPlateMath}
-                barWeight={weight.unit === 'kg' ? profile.settings.barWeight.kg : profile.settings.barWeight.lb}
-                restSeconds={restMap.get(set.id) ?? 180}
-                onPatch={(patch) => patchSet(session.key, set.id, patch)}
-                onDone={onRest}
-              />
-              {set.amrap ? (
-                <div className="mt-1 px-3 text-xs text-ink-400">
-                  <span className="font-semibold text-flame-400">Rep record set</span> — go past {set.targetReps},
-                  stop with one clean rep left.
-                  {previousBest ? (
-                    <span className="tabular ml-1 text-ink-300">
-                      Best so far: {weight.full(previousBest.best.weightKg)} × {previousBest.best.reps}.
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-              {cappedMap.get(set.id)?.capped ? (
-                <div className="mt-1 px-3 text-xs text-flame-400">
-                  Prescribed {cappedMap.get(set.id)?.uncappedWeight} {weight.unit} — capped, so the target rose to{' '}
-                  {set.targetReps} reps.
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {session.supplementalSets.length > 0 ? (
-        <section className="mb-5">
-          <SectionTitle>{prescription.supplementalLabel}</SectionTitle>
-          <div className="space-y-1.5">
-            {session.supplementalSets.map((set) => (
-              <SetRow
-                key={set.id}
-                set={set}
-                label={cappedMap.get(set.id)?.label ?? 'Set'}
-                perHand={Boolean(exercise.perHand)}
-                showPlates={profile.settings.showPlateMath}
-                barWeight={weight.unit === 'kg' ? profile.settings.barWeight.kg : profile.settings.barWeight.lb}
-                restSeconds={restMap.get(set.id) ?? 75}
-                onPatch={(patch) => patchSet(session.key, set.id, patch)}
-                onDone={onRest}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {blocks.map((block) => (
+        <MainLiftBlock
+          key={block.ordinal}
+          block={block}
+          combined={combined}
+          session={session}
+          cycle={cycle}
+          cycles={cycles}
+          profile={profile}
+          weekLabel={weekSpec.label}
+          onRest={onRest}
+          onRequestSwap={() => setSwapOrdinal(block.ordinal)}
+        />
+      ))}
 
       <section className="mb-5">
         <SectionTitle>Accessories</SectionTitle>
@@ -635,19 +437,21 @@ export function SessionScreen({ cycle, session }: { cycle: Cycle; session: Sessi
       </div>
 
       <ExerciseSwap
-        open={swapping}
-        onClose={() => setSwapping(false)}
-        exerciseId={exercise.id}
-        currentWeightKg={lift?.trainingMaxKg ?? null}
-        title={`Swap ${lift?.label ?? exercise.name}`}
-        plannedExerciseId={lift?.exerciseId}
-        onPick={(id) => swapMainExercise(session.key, id)}
+        open={swapBlock !== null}
+        onClose={() => setSwapOrdinal(null)}
+        exerciseId={swapBlock?.exercise.id ?? blocks[0].exercise.id}
+        currentWeightKg={swapBlock?.lift?.trainingMaxKg ?? null}
+        title={`Swap ${swapBlock?.lift?.label ?? swapBlock?.exercise.name ?? 'lift'}`}
+        plannedExerciseId={swapBlock?.lift?.exerciseId}
+        onPick={(id) => swapMainExercise(session.key, id, swapBlock?.ordinal ?? 0)}
       />
 
       <Sheet open={finishing} onClose={() => setFinishing(false)} title="Finish workout">
         <p className="text-sm text-ink-300">
           {doneTotal} of {totalCount} sets logged.
-          {doneTotal < totalCount ? ' Anything unchecked is recorded as not done.' : ' Everything done — nice.'}
+          {doneTotal < totalCount
+            ? ' Anything unchecked is recorded as not done.'
+            : ' Everything done — nice.'}
         </p>
         <div className="mt-4 space-y-2">
           <Button

@@ -6,10 +6,9 @@ import {
   cycleProgress,
   cycleSlots,
   isCycleComplete,
-  liftFor,
-  mainExerciseId,
+  liftsFor,
   nextSession,
-  prescriptionFor,
+  prescriptionsFor,
 } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
 import type { Cycle, Session } from '../lib/types'
@@ -77,12 +76,11 @@ function UpNext({ cycle, session }: { cycle: Cycle; session: Session }) {
   const openSession = useApp((s) => s.openSession)
   const weight = useWeight()
 
-  const prescription = useMemo(
-    () => prescriptionFor(cycle, session, profile.settings),
+  const blocks = useMemo(
+    () => prescriptionsFor(cycle, session, profile.settings),
     [cycle, session, profile.settings],
   )
-  const lift = liftFor(cycle, session.slot)
-  const exercise = getExercise(mainExerciseId(cycle, session), profile.customExercises)
+  const combined = blocks.length > 1
   const weekSpec = cycle.template.weeks[session.week - 1]
   const accessories = (cycle.accessoryPlan[session.slot] ?? []).filter((a) => a.active)
 
@@ -92,40 +90,55 @@ function UpNext({ cycle, session }: { cycle: Cycle; session: Session }) {
         <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-400">
           {session.status === 'in-progress' ? 'Pick up where you left off' : 'Up next'}
         </div>
-        <h2 className="mt-0.5 text-2xl font-bold leading-tight">{lift?.label ?? exercise.name}</h2>
+        <h2 className="mt-0.5 text-2xl font-bold leading-tight">
+          {blocks.map((block) => block.lift?.label ?? block.exercise.name).join(' + ')}
+        </h2>
         <p className="text-sm text-ink-300">
           Week {session.week} · Day {session.slot} · {weekSpec.label}
         </p>
       </div>
 
       <div className="px-4 py-3">
-        <div className="flex flex-wrap gap-1.5">
-          {prescription.main.map((set) => (
-            <span
-              key={set.id}
-              className={cx(
-                'tabular rounded-lg px-2.5 py-1.5 text-sm font-semibold',
-                set.amrap ? 'bg-flame-500/15 text-flame-400' : 'bg-ink-800 text-ink-100',
-              )}
-            >
-              {set.weight ?? 'BW'}
-              <span className="text-xs font-normal text-ink-400">
-                {set.weight !== null ? ` ${weight.unit}` : ''} ×
-              </span>
-              {set.reps}
-              {set.amrap ? '+' : ''}
-            </span>
-          ))}
-        </div>
+        {blocks.map((block) => {
+          const prescription = block.prescription
+          return (
+            <div key={block.ordinal} className={block.ordinal > 0 ? 'mt-3' : ''}>
+              {/* Named only when the day pairs lifts; otherwise the heading says it. */}
+              {combined ? (
+                <div className="mb-1 text-xs font-semibold text-ink-300">
+                  {block.lift?.label ?? block.exercise.name}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-1.5">
+                {prescription.main.map((set) => (
+                  <span
+                    key={set.id}
+                    className={cx(
+                      'tabular rounded-lg px-2.5 py-1.5 text-sm font-semibold',
+                      set.amrap ? 'bg-flame-500/15 text-flame-400' : 'bg-ink-800 text-ink-100',
+                    )}
+                  >
+                    {set.weight ?? 'BW'}
+                    <span className="text-xs font-normal text-ink-400">
+                      {set.weight !== null ? ` ${weight.unit}` : ''} ×
+                    </span>
+                    {set.reps}
+                    {set.amrap ? '+' : ''}
+                  </span>
+                ))}
+              </div>
 
-        {prescription.supplemental.length > 0 ? (
-          <p className="mt-2 text-xs text-ink-400">
-            then {prescription.supplementalLabel} —{' '}
-            <span className="tabular text-ink-300">
-              {prescription.supplemental[0].weight ?? 'BW'} {weight.unit}
-            </span>
-          </p>
-        ) : null}
+              {prescription.supplemental.length > 0 ? (
+                <p className="mt-2 text-xs text-ink-400">
+                  then {prescription.supplementalLabel} —{' '}
+                  <span className="tabular text-ink-300">
+                    {prescription.supplemental[0].weight ?? 'BW'} {weight.unit}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          )
+        })}
 
         {accessories.length > 0 ? (
           <p className="mt-1 truncate text-xs text-ink-400">
@@ -218,7 +231,7 @@ export function HomeScreen() {
           const week = next?.week ?? 4
           const session = cycle.sessions[`w${week}${slot}`]
           if (!session) return <span key={slot} />
-          const lift = liftFor(cycle, slot)
+          const names = liftsFor(cycle, slot).map((lift) => lift.label ?? '')
           const isNext = session.key === next?.key
           return (
             <button
@@ -236,7 +249,10 @@ export function HomeScreen() {
             >
               <div className="text-[10px] font-bold uppercase tracking-wide text-ink-400">Day {slot}</div>
               <div className="truncate text-xs font-semibold">
-                {(lift?.label ?? '').split(' ').slice(0, 2).join(' ')}
+                {/* Room for two words for one lift, one word each when paired. */}
+                {names.length > 1
+                  ? names.map((name) => name.split(' ')[0]).join(' + ')
+                  : names.map((name) => name.split(' ').slice(0, 2).join(' ')).join('')}
               </div>
               <div className="mt-0.5 text-[10px] text-ink-400">
                 {session.status === 'complete' ? 'done' : session.status === 'skipped' ? 'skipped' : 'to do'}
@@ -251,12 +267,14 @@ export function HomeScreen() {
           <SectionTitle>Recent</SectionTitle>
           <Card className="divide-y divide-ink-700/60">
             {recent.map(({ cycle: c, session }) => {
-              const lift = liftFor(c, session.slot)
+              const names = liftsFor(c, session.slot).map((lift) => lift.label ?? '')
               const top = session.mainSets.find((s) => s.amrap && s.done)
               return (
                 <div key={`${c.id}-${session.key}`} className="flex items-center justify-between gap-3 px-3 py-2.5">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{lift?.label ?? `Day ${session.slot}`}</div>
+                    <div className="truncate text-sm font-medium">
+                      {names.length > 0 ? names.join(' + ') : `Day ${session.slot}`}
+                    </div>
                     <div className="text-xs text-ink-400">
                       {c.name} · week {session.week} ·{' '}
                       {session.completedDate ? new Date(session.completedDate).toLocaleDateString() : ''}

@@ -81,17 +81,35 @@ export interface CreateCycleArgs {
   accessoryPlan: Record<DaySlot, PlannedAccessory[]>
   template: Template
   settings: Settings
-  /** Training maxes to freeze, keyed by slot. Derived from est 1RM when absent. */
-  trainingMaxOverridesKg?: Partial<Record<DaySlot, number>>
+  /**
+   * Training maxes to freeze, keyed by `liftKey`. Keyed by lift rather than by
+   * day because a day can hold two of them, and by slot one would overwrite the
+   * other's max.
+   */
+  trainingMaxOverridesKg?: Record<string, number>
+}
+
+/** Identifies one main lift of a cycle: its day, and its position within it. */
+export const liftKey = (slot: DaySlot, ordinal: number) => `${slot}:${ordinal}`
+
+/** Positions of a lift list within their own days, in list order. */
+const ordinals = (lifts: Pick<Lift, 'slot'>[]): number[] => {
+  const seen = new Map<DaySlot, number>()
+  return lifts.map((lift) => {
+    const next = seen.get(lift.slot) ?? 0
+    seen.set(lift.slot, next + 1)
+    return next
+  })
 }
 
 export function createCycle(args: CreateCycleArgs): Cycle {
   const ctx = contextFor(args.settings)
   const stamp = new Date().toISOString()
-  const cycleLifts: CycleLift[] = args.lifts.map((lift) => ({
+  const order = ordinals(args.lifts)
+  const cycleLifts: CycleLift[] = args.lifts.map((lift, index) => ({
     ...lift,
     trainingMaxKg:
-      args.trainingMaxOverridesKg?.[lift.slot] ??
+      args.trainingMaxOverridesKg?.[liftKey(lift.slot, order[index])] ??
       trainingMaxFromEstimate(lift.est1RMKg, args.settings.tmPercent, getExercise(lift.exerciseId).equipment, ctx),
   }))
 
@@ -129,8 +147,9 @@ export function substituteTrainingMaxKg(
   slot: DaySlot,
   exerciseId: string,
   settings: Settings,
+  ordinal = 0,
 ): number | undefined {
-  const lift = liftFor(cycle, slot)
+  const lift = cycle.lifts.filter((l) => l.slot === slot)[ordinal]
   if (!lift || exerciseId === lift.exerciseId) return undefined
   const converted = convertLoad(lift.exerciseId, exerciseId, lift.trainingMaxKg)
   if (converted === null) return undefined
@@ -139,22 +158,103 @@ export function substituteTrainingMaxKg(
   return toKg(roundTo(fromKg(converted, ctx.unit), increment), ctx.unit)
 }
 
-/** The exercise actually being trained — the swap if there is one, else the plan. */
-export function mainExerciseId(cycle: Cycle, session: Session): string {
-  return session.mainExerciseId ?? liftFor(cycle, session.slot)?.exerciseId ?? 'bench'
+/** Every main lift on a day, in plan order. A combined day has more than one. */
+export const liftsFor = (cycle: Cycle, slot: DaySlot): CycleLift[] =>
+  cycle.lifts.filter((lift) => lift.slot === slot)
+
+/** The substitution for one of a day's main lifts, legacy fields included. */
+export function swapFor(
+  session: Session,
+  ordinal: number,
+): { exerciseId: string; trainingMaxKg?: number } | undefined {
+  const current = session.mainSwaps?.[ordinal]
+  if (current) return current
+  // Sessions written before a day could hold two lifts swapped only the first.
+  if (ordinal === 0 && session.mainExerciseId) {
+    return { exerciseId: session.mainExerciseId, trainingMaxKg: session.mainTrainingMaxKg }
+  }
+  return undefined
 }
 
-export function prescriptionFor(cycle: Cycle, session: Session, settings: Settings) {
-  const lift = liftFor(cycle, session.slot)
+/** The exercise actually being trained in one of a day's main slots. */
+export function mainExerciseIdAt(cycle: Cycle, session: Session, ordinal: number): string {
+  return (
+    swapFor(session, ordinal)?.exerciseId ??
+    liftsFor(cycle, session.slot)[ordinal]?.exerciseId ??
+    'bench'
+  )
+}
+
+/** The first main lift's exercise. Kept for callers that show one name. */
+export function mainExerciseId(cycle: Cycle, session: Session): string {
+  return mainExerciseIdAt(cycle, session, 0)
+}
+
+/**
+ * Set ids must be unique across a day's lifts, but the first lift keeps the
+ * original unprefixed ids so every session logged before combined days existed
+ * still merges against its prescription.
+ */
+export const setIdPrefix = (ordinal: number) => (ordinal === 0 ? '' : `L${ordinal}:`)
+
+/** Which of a day's main lifts a logged set belongs to. */
+export const setBelongsTo = (setId: string, ordinal: number) =>
+  ordinal === 0 ? !/^L\d+:/.test(setId) : setId.startsWith(setIdPrefix(ordinal))
+
+/** The lift a logged set belongs to, read back off its id. */
+export const ordinalOfSet = (setId: string) => Number(/^L(\d+):/.exec(setId)?.[1] ?? 0)
+
+/** A lift's position within its own day. */
+export const liftOrdinal = (cycle: Cycle, lift: Pick<CycleLift, 'slot' | 'exerciseId'>) =>
+  Math.max(
+    0,
+    liftsFor(cycle, lift.slot).findIndex((candidate) => candidate.exerciseId === lift.exerciseId),
+  )
+
+export interface MainBlock {
+  ordinal: number
+  lift: CycleLift | undefined
+  exercise: Exercise
+  prescription: ReturnType<typeof buildPrescription>
+}
+
+/** One prescription per main lift on the day. */
+export function prescriptionsFor(cycle: Cycle, session: Session, settings: Settings): MainBlock[] {
   const ctx = contextFor(settings)
-  const exerciseId = mainExerciseId(cycle, session)
-  return buildPrescription({
-    trainingMaxKg: session.mainTrainingMaxKg ?? lift?.trainingMaxKg ?? 0,
-    exercise: getExercise(exerciseId),
-    template: cycle.template,
-    week: session.week,
-    ctx,
+  const lifts = liftsFor(cycle, session.slot)
+  const count = Math.max(1, lifts.length)
+
+  return Array.from({ length: count }, (_, ordinal) => {
+    const lift = lifts[ordinal]
+    const swap = swapFor(session, ordinal)
+    const exercise = getExercise(mainExerciseIdAt(cycle, session, ordinal))
+    const prescription = buildPrescription({
+      trainingMaxKg: swap?.trainingMaxKg ?? lift?.trainingMaxKg ?? 0,
+      exercise,
+      template: cycle.template,
+      week: session.week,
+      ctx,
+    })
+    const prefix = setIdPrefix(ordinal)
+    return {
+      ordinal,
+      lift,
+      exercise,
+      prescription: prefix
+        ? {
+            ...prescription,
+            warmups: prescription.warmups.map((set) => ({ ...set, id: prefix + set.id })),
+            main: prescription.main.map((set) => ({ ...set, id: prefix + set.id })),
+            supplemental: prescription.supplemental.map((set) => ({ ...set, id: prefix + set.id })),
+          }
+        : prescription,
+    }
   })
+}
+
+/** The first main lift's prescription. Kept for callers that show one block. */
+export function prescriptionFor(cycle: Cycle, session: Session, settings: Settings) {
+  return prescriptionsFor(cycle, session, settings)[0].prescription
 }
 
 const toLogged = (set: PrescribedSet, unit: 'lb' | 'kg'): LoggedSet => ({
@@ -173,7 +273,7 @@ const toLogged = (set: PrescribedSet, unit: 'lb' | 'kg'): LoggedSet => ({
  * already logged. Called when a session is opened, and again after a swap.
  */
 export function hydrateSession(cycle: Cycle, session: Session, settings: Settings): Session {
-  const p = prescriptionFor(cycle, session, settings)
+  const blocks = prescriptionsFor(cycle, session, settings)
   const unit = settings.unit
   const existing = new Map(
     [...session.mainSets, ...session.supplementalSets].map((s) => [s.id, s]),
@@ -216,8 +316,10 @@ export function hydrateSession(cycle: Cycle, session: Session, settings: Setting
 
   return {
     ...session,
-    mainSets: merge([...p.warmups, ...p.main]),
-    supplementalSets: merge(p.supplemental),
+    // Flattened across the day's lifts; the set ids carry which lift each
+    // belongs to, so a combined day stays one list to log against.
+    mainSets: merge(blocks.flatMap((b) => [...b.prescription.warmups, ...b.prescription.main])),
+    supplementalSets: merge(blocks.flatMap((b) => b.prescription.supplemental)),
     accessories,
   }
 }
@@ -256,19 +358,22 @@ export const isCycleComplete = (cycle: Cycle) =>
 export function nextCycleFrom(
   previous: Cycle,
   profile: Profile,
-  trainingMaxesKg: Partial<Record<DaySlot, number>>,
+  trainingMaxesKg: Record<string, number>,
   overrides: { template?: Template; accessoryPlan?: Record<DaySlot, PlannedAccessory[]>; startDate?: string } = {},
 ): Cycle {
+  const order = ordinals(previous.lifts)
   return createCycle({
     number: previous.number + 1,
     startDate: overrides.startDate,
-    lifts: previous.lifts.map((lift) => ({
+    lifts: previous.lifts.map((lift, index) => ({
       slot: lift.slot,
       exerciseId: lift.exerciseId,
       label: lift.label,
       category: lift.category,
       // Keep the estimate in step with the new training max so the two never drift.
-      est1RMKg: (trainingMaxesKg[lift.slot] ?? lift.trainingMaxKg) / profile.settings.tmPercent,
+      est1RMKg:
+        (trainingMaxesKg[liftKey(lift.slot, order[index])] ?? lift.trainingMaxKg) /
+        profile.settings.tmPercent,
     })),
     accessoryPlan: overrides.accessoryPlan ?? previous.accessoryPlan,
     template: overrides.template ?? previous.template,
@@ -292,11 +397,26 @@ export interface MaxDrift {
  * nothing, which is worth saying out loud rather than leaving someone to work it
  * out at the gym. This reports the gap so the UI can offer to close it.
  */
+/**
+ * The profile lift a cycle lift came from.
+ *
+ * Matched on the movement first, then on position within the day, because a day
+ * can hold two lifts: finding by slot alone would compare a day's second lift
+ * against the first one's max and offer to overwrite it.
+ */
+function plannedLiftFor(cycle: Cycle, profile: Profile, lift: CycleLift): Lift | undefined {
+  const sameDay = profile.lifts.filter((l) => l.slot === lift.slot)
+  return (
+    sameDay.find((l) => l.exerciseId === lift.exerciseId) ??
+    sameDay[liftOrdinal(cycle, lift)]
+  )
+}
+
 export function cycleMaxDrift(cycle: Cycle, profile: Profile): MaxDrift[] {
   const ctx = contextFor(profile.settings)
   const drift: MaxDrift[] = []
   for (const lift of cycle.lifts) {
-    const planned = profile.lifts.find((l) => l.slot === lift.slot)
+    const planned = plannedLiftFor(cycle, profile, lift)
     if (!planned) continue
     const expected = trainingMaxFromEstimate(
       planned.est1RMKg,
@@ -322,7 +442,7 @@ export function cycleMaxDrift(cycle: Cycle, profile: Profile): MaxDrift[] {
 export function refreshCycle(cycle: Cycle, profile: Profile): Cycle {
   const ctx = contextFor(profile.settings)
   const lifts: CycleLift[] = cycle.lifts.map((lift) => {
-    const planned = profile.lifts.find((l) => l.slot === lift.slot)
+    const planned = plannedLiftFor(cycle, profile, lift)
     if (!planned) return lift
     return {
       ...lift,
