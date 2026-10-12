@@ -3,7 +3,7 @@ import { useToast, useWeight } from '../components/hooks'
 import { Button, Card, Empty, Pill, SectionTitle, Sheet, Toast, cx } from '../components/ui'
 import { cycleProgress, isCycleComplete, liftFor, mainExerciseId, prescriptionFor } from '../lib/cycle'
 import { getExercise } from '../lib/exercises'
-import { cycleToText, shareText, weekToText } from '../lib/share'
+import { cycleToText, sessionToText, shareText, weekToText } from '../lib/share'
 import { DAY_SLOTS, WEEK_NUMBERS, type Cycle, type Session, type Settings, type WeekNumber } from '../lib/types'
 import { useActiveCycle, useApp } from '../state/useApp'
 import { CycleReportView } from './CycleReport'
@@ -159,7 +159,8 @@ function PrintView({ cycle, settings }: { cycle: Cycle; settings: Settings }) {
 }
 
 export function CycleScreen() {
-  const cycle = useActiveCycle()
+  const activeCycle = useActiveCycle()
+  const cycles = useApp((s) => s.cycles)
   const profile = useApp((s) => s.profile)
   const openSession = useApp((s) => s.openSession)
   const startCycle = useApp((s) => s.startCycle)
@@ -169,6 +170,15 @@ export function CycleScreen() {
   const [printing, setPrinting] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [showingReport, setShowingReport] = useState(false)
+  const [pickingCycle, setPickingCycle] = useState(false)
+  const [viewingId, setViewingId] = useState<string | null>(null)
+  const [viewingSessionKey, setViewingSessionKey] = useState<string | null>(null)
+
+  // Default to the running cycle; `viewingId` only deviates when a past one is
+  // picked, so a new cycle starting does not leave the screen behind.
+  const cycle = (viewingId ? cycles.find((c) => c.id === viewingId) : null) ?? activeCycle
+  const isActive = cycle?.id === activeCycle?.id
+  const ordered = [...cycles].sort((a, b) => b.number - a.number)
 
   if (!cycle || !profile) {
     return (
@@ -215,9 +225,18 @@ export function CycleScreen() {
     <div className="pb-24">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold">{cycle.name}</h1>
+          <button
+            type="button"
+            onClick={() => setPickingCycle(true)}
+            className="flex min-w-0 items-center gap-1.5 text-left"
+            disabled={ordered.length < 2}
+          >
+            <h1 className="truncate text-2xl font-bold">{cycle.name}</h1>
+            {ordered.length > 1 ? <span className="shrink-0 text-ink-400">▾</span> : null}
+          </button>
           <p className="text-sm text-ink-400">
             {cycle.template.name} · {progress.completed}/{progress.total} days
+            {isActive ? '' : ' · finished'}
           </p>
         </div>
         <Button size="sm" onClick={() => setSharing(true)}>
@@ -267,7 +286,9 @@ export function CycleScreen() {
                     cycle={cycle}
                     session={session}
                     settings={settings}
-                    onOpen={() => openSession(session.key)}
+                    onOpen={() =>
+                      isActive ? openSession(session.key) : setViewingSessionKey(session.key)
+                    }
                   />
                 )
               })}
@@ -275,7 +296,8 @@ export function CycleScreen() {
           ))}
         </div>
         <p className="mt-2 text-center text-[10px] text-ink-400">
-          Top set shown · weights in {weight.unit} · tap any day to open it
+          Top set shown · weights in {weight.unit} ·{' '}
+          {isActive ? 'tap any day to open it' : 'tap any day to see what you did'}
         </p>
       </Card>
 
@@ -313,6 +335,69 @@ export function CycleScreen() {
           </Button>
         </Card>
       ) : null}
+
+      <Sheet open={pickingCycle} onClose={() => setPickingCycle(false)} title="Which cycle?">
+        <ul className="space-y-1.5">
+          {ordered.map((entry) => {
+            const entryProgress = cycleProgress(entry)
+            const selected = entry.id === cycle.id
+            return (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewingId(entry.id === activeCycle?.id ? null : entry.id)
+                    setWeek(1)
+                    setPickingCycle(false)
+                  }}
+                  className={cx(
+                    'w-full rounded-xl border px-3 py-2.5 text-left transition',
+                    selected ? 'border-brand-500 bg-brand-500/10' : 'border-ink-700 bg-ink-800/60',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{entry.name}</span>
+                    {entry.id === activeCycle?.id ? (
+                      <span className="rounded bg-brand-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-400">
+                        current
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    {entry.template.name} · {entryProgress.completed}/{entryProgress.total} days ·{' '}
+                    {new Date(entry.startDate).toLocaleDateString()}
+                  </p>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </Sheet>
+
+      <Sheet
+        open={viewingSessionKey !== null}
+        onClose={() => setViewingSessionKey(null)}
+        title="What you did"
+      >
+        {viewingSessionKey && cycle.sessions[viewingSessionKey] ? (
+          <>
+            <pre className="tabular overflow-x-auto whitespace-pre text-xs leading-relaxed text-ink-200">
+              {sessionToText(cycle, cycle.sessions[viewingSessionKey], settings)}
+            </pre>
+            <Button
+              className="mt-4 w-full"
+              onClick={() =>
+                doShare(
+                  sessionToText(cycle, cycle.sessions[viewingSessionKey], settings),
+                  'Workout',
+                )
+              }
+            >
+              Share this day
+            </Button>
+          </>
+        ) : null}
+      </Sheet>
 
       <Sheet open={sharing} onClose={() => setSharing(false)} title="Share">
         <div className="space-y-2">

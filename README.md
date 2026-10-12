@@ -39,6 +39,9 @@ remembers where you left off, progresses your accessories, and fits on a phone.
   A share reports what was actually lifted wherever it was logged and the plan
   for anything still ahead, so a finished day goes out as a record and an
   upcoming one as a plan.
+- **Every past cycle, still there.** The Cycle screen's title is a picker: open
+  any cycle you have run to see its month grid, its report, and what you
+  actually did on any day of it.
 - **A report at the end of every cycle.** Days trained, total load, sets and
   reps, each lift's rep record, a per-exercise table and a split of where the
   work actually went by muscle group. Shareable as text or printable.
